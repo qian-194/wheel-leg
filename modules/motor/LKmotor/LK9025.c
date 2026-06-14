@@ -53,9 +53,10 @@ static void LKMotorLostCallback(void *motor_ptr)
 LKMotorInstance *LKMotorInit(Motor_Init_Config_s *config)
 {
     LKMotorInstance *motor = (LKMotorInstance *)malloc(sizeof(LKMotorInstance));
-    motor = (LKMotorInstance *)malloc(sizeof(LKMotorInstance));
     memset(motor, 0, sizeof(LKMotorInstance));
 
+    motor->motor_type = config->motor_type;
+    motor->motor_mode = config->motor_mode;
     motor->motor_settings = config->controller_setting_init_config;
     PIDInit(&motor->current_PID, &config->controller_param_init_config.current_PID);
     PIDInit(&motor->speed_PID, &config->controller_param_init_config.speed_PID);

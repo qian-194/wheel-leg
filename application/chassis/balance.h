@@ -128,17 +128,5 @@ typedef struct
     float debug[10];   // 调试数据
 } ChassisParam;
 
-/* ==================== 函数声明 ==================== */
-
-/**
- * @brief 轮腿平衡控制初始化
- */
-void BalanceInit(void);
-
-/**
- * @brief 轮腿平衡控制任务
- * @note 建议运行频率 1kHz
- */
-void BalanceTask(void);
 
 #endif // BALANCE_H

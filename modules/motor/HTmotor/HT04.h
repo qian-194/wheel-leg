@@ -11,17 +11,18 @@
 #define CURRENT_SMOOTH_COEF 0.9f
 #define SPEED_BUFFER_SIZE 5
 #define HT_SPEED_BIAS -0.0109901428f // 电机速度偏差,单位rad/s
+#define TORQUE_COEF_HT 3.5f          // 扭矩系数,单位N.m/A
 
-#define P_MIN -95.5f // Radians
-#define P_MAX 95.5f
-#define V_MIN -45.0f // Rad/s
-#define V_MAX 45.0f
-#define T_MIN -18.0f // N·m
-#define T_MAX 18.0f
-#define KP_MIN 0.0f // N-m/rad
-#define KP_MAX 500.0f
-#define KD_MIN 0.0f // N-m/rad/s
-#define KD_MAX 5.0f
+#define HT_P_MIN -95.5f // Radians
+#define HT_P_MAX 95.5f
+#define HT_V_MIN -45.0f // Rad/s
+#define HT_V_MAX 45.0f
+#define HT_T_MIN -18.0f // N·m
+#define HT_T_MAX 18.0f
+#define HT_KP_MIN 0.0f // N-m/rad
+#define HT_KP_MAX 500.0f
+#define HT_KD_MIN 0.0f // N-m/rad/s
+#define HT_KD_MAX 5.0f
 
 typedef struct // HT04
 {
@@ -40,6 +41,9 @@ typedef struct // HT04
 /* HT电机类型定义*/
 typedef struct
 {
+    Motor_Type_e motor_type;
+    Motor_Control_Mode_e motor_mode;
+
     HTMotor_Measure_t measure;
 
     Motor_Control_Setting_s motor_settings;
@@ -120,4 +124,4 @@ void HTMotorOuterLoop(HTMotorInstance *motor, Closeloop_Type_e type);
  */
 void HTMotorCalibEncoder(HTMotorInstance *motor);
 
-#endif // !HT04_H#define HT04_H
+#endif // !HT04_H
