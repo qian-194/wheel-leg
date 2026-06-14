@@ -1,1 +1,49 @@
-/build
+# ============== 构建和编译产物 ==============
+/build/
+build/
+*.o
+*.d
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.elf
+*.hex
+*.bin
+*.lst
+*.map
+
+# ============== IDE 和编辑器 ==============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+.DS_Store
+Thumbs.db
+
+# ============== 调试文件 ==============
+*.jdebug*
+h723ozone.jdebug*
+*.dmp
+*.log
+
+# ============== 系统文件 ==============
+.settings/
+.classpath
+.project
+
+# ============== 不需要的目录 ==============
+.assets/
+.Doc/
+*.md~
+
+# ============== 忽略所有不明确的目录/文件，除了必要的源文件 ==============
+# 但保留 Makefile, .md, .c, .h 文件
+# 编译出的二进制文件夹
+obj/
+lib/
+bin/
+output/
