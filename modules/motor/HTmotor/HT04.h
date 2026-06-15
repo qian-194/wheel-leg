@@ -38,6 +38,15 @@ typedef struct // HT04
     uint32_t feed_cnt;
 } HTMotor_Measure_t;
 
+typedef struct
+{
+    float position; // rad
+    float velocity; // rad/s
+    float kp;       // N-m/rad
+    float kd;       // N-m/rad/s
+    float torque;   // N-m
+} HTMotor_MIT_Ref_t;
+
 /* HT电机类型定义*/
 typedef struct
 {
@@ -56,6 +65,7 @@ typedef struct
     float *speed_feedforward_ptr;
     float *current_feedforward_ptr;
     float pid_ref;
+    HTMotor_MIT_Ref_t mit_ref;
 
     Motor_Working_Type_e stop_flag; // 启停标志
 
@@ -88,6 +98,18 @@ HTMotorInstance *HTMotorInit(Motor_Init_Config_s *config);
  * @param current   设定值
  */
 void HTMotorSetRef(HTMotorInstance *motor, float ref);
+
+/**
+ * @brief 设定MIT模式五元组参考值
+ *
+ * @param motor 要设定的电机
+ * @param position 目标位置,单位rad
+ * @param velocity 目标速度,单位rad/s
+ * @param kp 位置刚度,N-m/rad
+ * @param kd 速度阻尼,N-m/rad/s
+ * @param torque 前馈力矩,N-m
+ */
+void HTMotorSetMITRef(HTMotorInstance *motor, float position, float velocity, float kp, float kd, float torque);
 
 /**
  * @brief 初始化电机任务,若要使用,需要在motortask的死循环前调用

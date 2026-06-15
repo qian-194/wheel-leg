@@ -115,6 +115,7 @@ typedef enum
     SPEED_MODE = 2,
     POSITION_MODE = 3,
     SPEED_POSITION_MODE = 4,
+    MIT_MODE = 5,
 } Motor_Control_Mode_e;
 
 /**

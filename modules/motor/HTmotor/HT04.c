@@ -40,6 +40,31 @@ static float uint_to_float(int x_int, float x_min, float x_max, int bits)
     return ((float)x_int) * span / ((float)((1 << bits) - 1)) + offset;
 }
 
+static void HTMotorPackMITFrame(HTMotorInstance *motor, float position, float velocity, float kp, float kd, float torque)
+{
+    LIMIT_MIN_MAX(position, HT_P_MIN, HT_P_MAX);
+    LIMIT_MIN_MAX(velocity, HT_V_MIN, HT_V_MAX);
+    LIMIT_MIN_MAX(kp, HT_KP_MIN, HT_KP_MAX);
+    LIMIT_MIN_MAX(kd, HT_KD_MIN, HT_KD_MAX);
+    LIMIT_MIN_MAX(torque, HT_T_MIN, HT_T_MAX);
+
+    uint16_t p_uint = float_to_uint(position, HT_P_MIN, HT_P_MAX, 16);
+    uint16_t v_uint = float_to_uint(velocity, HT_V_MIN, HT_V_MAX, 12);
+    uint16_t kp_uint = float_to_uint(kp, HT_KP_MIN, HT_KP_MAX, 12);
+    uint16_t kd_uint = float_to_uint(kd, HT_KD_MIN, HT_KD_MAX, 12);
+    uint16_t t_uint = float_to_uint(torque, HT_T_MIN, HT_T_MAX, 12);
+
+    uint8_t *buf = motor->motor_can_instace->tx_buff;
+    buf[0] = p_uint >> 8;
+    buf[1] = p_uint & 0xFF;
+    buf[2] = v_uint >> 4;
+    buf[3] = ((v_uint & 0x0F) << 4) | (kp_uint >> 8);
+    buf[4] = kp_uint & 0xFF;
+    buf[5] = kd_uint >> 4;
+    buf[6] = ((kd_uint & 0x0F) << 4) | (t_uint >> 8);
+    buf[7] = t_uint & 0xFF;
+}
+
 /**
  * @brief 解析电机反馈值
  *
@@ -99,7 +124,6 @@ void HTMotorCalibEncoder(HTMotorInstance *motor)
     DWT_Delay(0.005);
     HTMotorSetMode(CMD_ZERO_POSITION, motor); // sb 玩意校准完了编码器也不为0
     DWT_Delay(0.005);
-    // HTMotorSetMode(CMD_MOTOR_MODE, motor);
 }
 
 HTMotorInstance *HTMotorInit(Motor_Init_Config_s *config)
@@ -139,6 +163,16 @@ HTMotorInstance *HTMotorInit(Motor_Init_Config_s *config)
 void HTMotorSetRef(HTMotorInstance *motor, float ref)
 {
     motor->pid_ref = ref;
+    motor->mit_ref.torque = ref;
+}
+
+void HTMotorSetMITRef(HTMotorInstance *motor, float position, float velocity, float kp, float kd, float torque)
+{
+    motor->mit_ref.position = position;
+    motor->mit_ref.velocity = velocity;
+    motor->mit_ref.kp = kp;
+    motor->mit_ref.kd = kd;
+    motor->mit_ref.torque = torque;
 }
 
 /**
@@ -152,10 +186,30 @@ __attribute__((noreturn)) void HTMotorTask(void const *argument)
     HTMotor_Measure_t *measure = &motor->measure;
     Motor_Control_Setting_s *setting = &motor->motor_settings;
     CANInstance *motor_can = motor->motor_can_instace;
-    uint16_t tmp;
 
     while (1)
     {
+        if (motor->motor_mode == MIT_MODE)
+        {
+            HTMotor_MIT_Ref_t mit_ref = motor->mit_ref;
+
+            if (setting->motor_reverse_flag == MOTOR_DIRECTION_REVERSE)
+            {
+                mit_ref.position *= -1.0f;
+                mit_ref.velocity *= -1.0f;
+                mit_ref.torque *= -1.0f;
+            }
+
+            if (motor->stop_flag == MOTOR_STOP)
+                HTMotorPackMITFrame(motor, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            else
+                HTMotorPackMITFrame(motor, mit_ref.position, mit_ref.velocity, mit_ref.kp, mit_ref.kd, mit_ref.torque);
+
+            CANTransmit(motor_can, 0.5);
+            osDelay(1);
+            continue;
+        }
+
         pid_ref = motor->pid_ref;
         if ((setting->close_loop_type & ANGLE_LOOP) && setting->outer_loop_type == ANGLE_LOOP)
         {
@@ -192,11 +246,9 @@ __attribute__((noreturn)) void HTMotorTask(void const *argument)
             set *= -1;
 
         LIMIT_MIN_MAX(set, HT_T_MIN, HT_T_MAX);
-        tmp = float_to_uint(set, HT_T_MIN, HT_T_MAX, 12);
         if (motor->stop_flag == MOTOR_STOP)
-            tmp = float_to_uint(0, HT_T_MIN, HT_T_MAX, 12);
-        motor_can->tx_buff[6] = (tmp >> 8);
-        motor_can->tx_buff[7] = tmp & 0xff;
+            set = 0.0f;
+        HTMotorPackMITFrame(motor, 0.0f, 0.0f, 0.0f, 0.0f, set);
 
         CANTransmit(motor_can, 0.5);
 
