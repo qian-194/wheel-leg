@@ -10,7 +10,7 @@
 #endif // !ROBOT_DEF_PARAM_WARNING
 
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD) 
-#include "chassis.h"
+#include "balance.h"
 #endif
 
 #if defined(ONE_BOARD) || defined(GIMBAL_BOARD)
@@ -36,7 +36,7 @@ void RobotInit()
 #endif
 
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD)
-    ChassisInit();
+    BalanceInit();
 #endif
 
     OSTaskInit(); // 创建基础任务
@@ -54,7 +54,7 @@ void RobotTask()
 #endif
 
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD)
-    ChassisTask();
+    BalanceTask();
 #endif
 
 

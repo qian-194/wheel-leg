@@ -11,7 +11,6 @@
  *
  */
 
-#include "chassis.h"
 #include "robot_def.h"
 #include "dji_motor.h"
 #include "HT04.h"
@@ -44,14 +43,17 @@ static SuperCapInstance *cap;                                       // 超级电
 static HTMotorInstance *lf, *lb, *rf, *rb, *joint[4]; 
 static LKMotorInstance *l_driven, *r_driven, *driven[2];
 
-attitude_t *Chassis_IMU_data; //轮腿底盘加入IMU数据
+static attitude_t *Chassis_IMU_data; //轮腿底盘加入IMU数据
+static BalanceState balance_state;
+static uint32_t balance_dwt_cnt;
+static float del_t;
 #define YAW_ALIGN_ANGLE (YAW_CHASSIS_ALIGN_ECD * ZF_ENCODER_ECD_TO_DEGREE) // 对齐时的角度,0-360
 static float joint_pos_min[JOINT_CNT] = {LF_MIN, LB_MIN, RF_MIN, RB_MIN}; // 四个关节电机的最小角度数组,方便传参和调试
 static float joint_pos_max[JOINT_CNT] = {LF_MAX, LB_MAX, RF_MAX, RB_MAX}; // 四个关节电机的最大角度数组,方便传参和调试
 /* 私有函数计算的中介变量,设为静态避免参数传递的开销 */
 static float chassis_vx, chassis_vy;     // 将云台系的速度投影到底盘
 
-void ChassisInit()
+void BalanceInit()
 {
     Chassis_IMU_data = INS_Init(); // 底盘IMU初始化
     chassis_sub = SubRegister("chassis_cmd", sizeof(Chassis_Ctrl_Cmd_s));
@@ -87,7 +89,7 @@ void ChassisInit()
             .speed_feedback_source = MOTOR_FEED,
         },
         .motor_type = HT04,
-        .motor_mode = TORQUE_MODE,
+        .motor_mode = MIT_MODE,
     };
     // 左关节
     joint_conf.can_init_config.can_handle = &hcan2;
@@ -155,11 +157,13 @@ void ChassisInit()
     driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL;
     driven[RD] = r_driven = LKMotorInit(&driven_conf);
 
+    BalanceStateReset(&balance_state);
+    DWT_GetDeltaT(&balance_dwt_cnt);
 }
 
 
 /* 机器人底盘控制核心任务 */
-void ChassisTask()
+void BalanceTask()
 {
     // 后续增加没收到消息的处理(双板的情况)
     // 获取新的控制信息
@@ -169,13 +173,23 @@ void ChassisTask()
     #if defined(CHASSIS_BOARD) || defined(CHASSIS_DEBUG)
         chassis_cmd_recv = *(Chassis_Ctrl_Cmd_s *)CANCommGet(chasiss_can_comm);
     #endif // CHASSIS_BOARD || CHASSIS_DEBUG
-    
 
+    del_t = DWT_GetDeltaT(&balance_dwt_cnt);
 
+    BalanceMotorFeedback motor_feedback = {
+        .lf = lf,
+        .lb = lb,
+        .rf = rf,
+        .rb = rb,
+        .l_driven = l_driven,
+        .r_driven = r_driven,
+    };
 
-
-
-
+    BalanceStateUpdate(&balance_state,
+                       Chassis_IMU_data,
+                       &chassis_cmd_recv,
+                       &motor_feedback,
+                       del_t);
 
     chassis_feedback_data.chassis_imu_data = *Chassis_IMU_data;
     // 推送反馈消息
