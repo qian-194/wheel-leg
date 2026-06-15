@@ -156,7 +156,7 @@ void BalanceInit()
     driven_conf.can_init_config.rx_id = 2;
     driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL;
     driven[RD] = r_driven = LKMotorInit(&driven_conf);
-
+    
     BalanceStateReset(&balance_state);
     DWT_GetDeltaT(&balance_dwt_cnt);
 }
@@ -190,6 +190,7 @@ void BalanceTask()
                        &chassis_cmd_recv,
                        &motor_feedback,
                        del_t);
+    BalanceControlUpdate(&balance_state, del_t);
 
     chassis_feedback_data.chassis_imu_data = *Chassis_IMU_data;
     // 推送反馈消息

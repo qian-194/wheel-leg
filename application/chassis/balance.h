@@ -34,6 +34,10 @@
 
 #define BALANCE_GRAVITY_BIAS 0
 #define ROLL_GRAVITY_BIAS 0
+#define BALANCE_GRAVITY 9.81f
+#define LEG_GRAVITY_FF_GAIN 1.0f
+#define LEG_FORCE_MAX 200.0f
+#define LEG_VMC_SIN_MIN 0.05f
 #define MAX_ACC_REF 1.2f    // m/s²,底盘最大加速度
 #define MAX_WZ_ACC_REF 3.5f    // rad/s²,底盘最大角加速度
 
@@ -156,6 +160,8 @@ void BalanceStateUpdate(BalanceState *state,
                         const Chassis_Ctrl_Cmd_s *cmd,
                         const BalanceMotorFeedback *motor,
                         float dt);
+
+void BalanceControlUpdate(BalanceState *state, float dt);
 
 /**
  * @brief 平衡底盘初始化

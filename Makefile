@@ -148,6 +148,7 @@ modules/vofa/vofa.c \
 application/gimbal/gimbal.c \
 application/chassis/balance.c \
 application/chassis/balance_state.c \
+application/chassis/balance_control.c \
 application/shoot/shoot.c \
 application/cmd/robot_cmd.c \
 application/buzzer/buzzer_app.c \

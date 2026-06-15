@@ -118,7 +118,7 @@ static void RemoteControlSet()
 {   
     // 右侧遥感控制前后左右
     chassis_cmd_send.vx = fs_data->rocker_r1*0.004;
-    chassis_cmd_send.vy = fs_data->rocker_r_*0.004;
+    chassis_cmd_send.wz = fs_data->rocker_r_*0.004;
     if(fs_data->switch_l1 ==1){
         robot_state = ROBOT_STOP;
     }
@@ -181,7 +181,7 @@ void RobotCMDTask()
     SubGetMessage(gimbal_feed_sub, &gimbal_fetch_data);
 
     // 根据gimbal的反馈值计算云台和底盘正方向的夹角,不需要传参,通过static私有变量完成
-    CalcOffsetAngle();
+    //CalcOffsetAngle();
     //vofa_test();
     // 根据遥控器左侧开关,确定当前使用的控制模式为遥控器调试还是键鼠
     // if (switch_is_down(rc_data[TEMP].rc.switch_left)) // 遥控器左侧开关状态为[下],遥控器控制
