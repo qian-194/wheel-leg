@@ -174,3 +174,9 @@ void BalanceInit(void);
  *
  */
 void BalanceTask(void);
+//全车急停
+void BalanceMotorStopAll(void);
+//关节急停
+void BalanceJointStop(void);
+//全车使能
+void BalanceMotorEnableAll(void);

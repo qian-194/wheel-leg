@@ -67,7 +67,6 @@ typedef enum
 {
     ROBOT_STOP = 0,
     ROBOT_READY,
-    ROBOT_STAND,
 } Robot_Status_e;
 
 // 应用状态
@@ -86,6 +85,8 @@ typedef enum
 typedef enum
 {
     CHASSIS_ZERO_FORCE = 0,    // 电流零输入
+    CHASSIS_JOINT_ZERO_FORCE,   //关节零输入
+    CHASSIS_STAND,              //平衡模式
     CHASSIS_ROTATE,            // 小陀螺模式
     CHASSIS_NO_FOLLOW,         // 不跟随，允许全向平移
     CHASSIS_FOLLOW_GIMBAL_YAW, // 跟随模式，底盘叠加角度环控制

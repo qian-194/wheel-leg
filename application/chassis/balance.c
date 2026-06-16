@@ -27,6 +27,8 @@
 #include "referee_UI.h"
 #include "arm_math.h"
 
+#include <math.h>
+#include <string.h>
 
 #ifdef ONE_BOARD
 static Publisher_t *chassis_pub;                    // 用于发布底盘的数据
@@ -52,6 +54,17 @@ static float joint_pos_min[JOINT_CNT] = {LF_MIN, LB_MIN, RF_MIN, RB_MIN}; // 四
 static float joint_pos_max[JOINT_CNT] = {LF_MAX, LB_MAX, RF_MAX, RB_MAX}; // 四个关节电机的最大角度数组,方便传参和调试
 /* 私有函数计算的中介变量,设为静态避免参数传递的开销 */
 static float chassis_vx, chassis_vy;     // 将云台系的速度投影到底盘
+
+#define TWO_WHEEL_TRACK_WIDTH_M ((float)TRACK_WIDTH * 0.001f)
+#define TWO_WHEEL_OPEN_LOOP_GAIN 200.0f
+#define TWO_WHEEL_OPEN_LOOP_MAX 600.0f
+#define JOINT_CALI_SPEED_TH 0.05f
+#define JOINT_CALI_TORQUE_TH 1.5f
+#define JOINT_CALI_CONFIRM_CNT 100u
+#define JOINT_CALI_CNT_MAX 250u
+
+static uint8_t JointCalibEncoder(void);
+static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd);
 
 void BalanceInit()
 {
@@ -156,7 +169,7 @@ void BalanceInit()
     driven_conf.can_init_config.rx_id = 2;
     driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL;
     driven[RD] = r_driven = LKMotorInit(&driven_conf);
-    
+
     BalanceStateReset(&balance_state);
     DWT_GetDeltaT(&balance_dwt_cnt);
 }
@@ -175,7 +188,6 @@ void BalanceTask()
     #endif // CHASSIS_BOARD || CHASSIS_DEBUG
 
     del_t = DWT_GetDeltaT(&balance_dwt_cnt);
-
     BalanceMotorFeedback motor_feedback = {
         .lf = lf,
         .lb = lb,
@@ -184,13 +196,42 @@ void BalanceTask()
         .l_driven = l_driven,
         .r_driven = r_driven,
     };
+    //上电初始化确定位置
+    if (balance_state.chassis.cali_flag)
+    {
+        LKMotorSetRef(l_driven, 0.0f);
+        LKMotorSetRef(r_driven, 0.0f);
+        LKMotorStop(l_driven);
+        LKMotorStop(r_driven);
 
-    BalanceStateUpdate(&balance_state,
-                       Chassis_IMU_data,
-                       &chassis_cmd_recv,
-                       &motor_feedback,
-                       del_t);
-    BalanceControlUpdate(&balance_state, del_t);
+        if (JointCalibEncoder() == 0u)
+            return;
+
+        balance_state.chassis.cali_flag = 0u;
+    }
+    //chassismode的处理,根据不同模式进行不同的控制
+    switch (chassis_cmd_recv.chassis_mode)
+    {
+    case CHASSIS_ZERO_FORCE:
+        BalanceMotorStopAll();
+        break;
+
+    case CHASSIS_JOINT_ZERO_FORCE:
+        BalanceTwoWheelOpenLoopControl(&chassis_cmd_recv);
+        break;
+
+    case CHASSIS_STAND:
+    default:
+        BalanceMotorEnableAll();
+
+        BalanceStateUpdate(&balance_state,
+                           Chassis_IMU_data,
+                           &chassis_cmd_recv,
+                           &motor_feedback,
+                           del_t);
+        BalanceControlUpdate(&balance_state, del_t);
+        break;
+    }
 
     chassis_feedback_data.chassis_imu_data = *Chassis_IMU_data;
     // 推送反馈消息
@@ -200,4 +241,136 @@ void BalanceTask()
     #if defined(CHASSIS_BOARD) || defined(CHASSIS_DEBUG)
         CANCommSend(chasiss_can_comm, (void *)&chassis_feedback_data);
     #endif // CHASSIS_BOARD || CHASSIS_DEBUG
+}
+
+
+void BalanceMotorStopAll(void)
+{
+    HTMotorSetMITRef(lf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(lb, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(rf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(rb, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+
+    HTMotorStop(lf);
+    HTMotorStop(lb);
+    HTMotorStop(rf);
+    HTMotorStop(rb);
+
+    LKMotorSetRef(l_driven, 0.0f);
+    LKMotorSetRef(r_driven, 0.0f);
+
+    LKMotorStop(l_driven);
+    LKMotorStop(r_driven);
+}
+
+void BalanceJointStop(void)
+{
+    HTMotorSetMITRef(lf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(lb, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(rf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HTMotorSetMITRef(rb, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+
+    HTMotorStop(lf);
+    HTMotorStop(lb);
+    HTMotorStop(rf);
+    HTMotorStop(rb);
+}
+
+void BalanceMotorEnableAll(void)
+{
+    HTMotorEnable(lf);
+    HTMotorEnable(lb);
+    HTMotorEnable(rf);
+    HTMotorEnable(rb);
+
+    LKMotorEnable(l_driven);
+    LKMotorEnable(r_driven);
+}
+
+/**
+ * @brief HT motors lose position after power cycle, so touch the short-leg
+ *        mechanical limit and set that position as encoder zero.
+ *
+ * @return uint8_t 1 when all joint motors are calibrated.
+ */
+static uint8_t JointCalibEncoder(void)
+{
+    static uint8_t cali_flag[JOINT_CNT] = {0};
+    static uint8_t cali_cnt[JOINT_CNT] = {0};
+
+    if (cali_flag[LF] == 0u && cali_flag[LB] == 0u &&
+        cali_flag[RF] == 0u && cali_flag[RB] == 0u)
+    {
+        for (uint8_t i = 0; i < JOINT_CNT; i++)
+        {
+            HTMotorEnable(joint[i]);
+            HTMotorOuterLoop(joint[i], OPEN_LOOP);
+        }
+    }
+
+    for (uint8_t i = 0; i < JOINT_CNT; i++)
+    {
+        if (!cali_flag[i])
+        {
+            if (fabsf(joint[i]->measure.speed_rads) < JOINT_CALI_SPEED_TH &&
+                fabsf(joint[i]->measure.real_current) > JOINT_CALI_TORQUE_TH)
+            {
+                if (cali_cnt[i] < JOINT_CALI_CNT_MAX)
+                    cali_cnt[i]++;
+
+                if (cali_cnt[i] >= JOINT_CALI_CONFIRM_CNT)
+                {
+                    HTMotorCalibEncoder(joint[i]);
+                    HTMotorOuterLoop(joint[i], OPEN_LOOP);
+                    HTMotorSetRef(joint[i], 0.0f);
+                    HTMotorSetMITRef(joint[i], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+                    HTMotorStop(joint[i]);
+                    cali_flag[i] = 1u;
+                    cali_cnt[i] = 0u;
+                }
+            }
+            else
+            {
+                cali_cnt[i] = 0u;
+            }
+        }
+    }
+
+    if (!cali_flag[LF]) HTMotorSetRef(lf,  1.2f);
+    if (!cali_flag[LB]) HTMotorSetRef(lb, -1.2f);
+    if (!cali_flag[RF]) HTMotorSetRef(rf,  1.2f);
+    if (!cali_flag[RB]) HTMotorSetRef(rb, -1.2f);
+
+    for (uint8_t i = 0; i < JOINT_CNT; i++)
+    {
+        if (!cali_flag[i])
+            return 0u;
+    }
+
+    memset(cali_flag, 0, sizeof(cali_flag));
+    memset(cali_cnt, 0, sizeof(cali_cnt));
+    return 1u;
+}
+
+static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd)
+{
+    float left_v = cmd->vx - cmd->wz * TWO_WHEEL_TRACK_WIDTH_M * 0.5f;
+    float right_v = cmd->vx + cmd->wz * TWO_WHEEL_TRACK_WIDTH_M * 0.5f;
+
+    float left_ref = left_v * TWO_WHEEL_OPEN_LOOP_GAIN;
+    float right_ref = right_v * TWO_WHEEL_OPEN_LOOP_GAIN;
+
+    LIMIT_MIN_MAX(left_ref, -TWO_WHEEL_OPEN_LOOP_MAX, TWO_WHEEL_OPEN_LOOP_MAX);
+    LIMIT_MIN_MAX(right_ref, -TWO_WHEEL_OPEN_LOOP_MAX, TWO_WHEEL_OPEN_LOOP_MAX);
+
+    BalanceJointStop();
+
+    LKMotorEnable(l_driven);
+    LKMotorEnable(r_driven);
+
+    l_driven->motor_settings.outer_loop_type = OPEN_LOOP;
+    r_driven->motor_settings.outer_loop_type = OPEN_LOOP;
+
+    LKMotorSetRef(l_driven, left_ref);
+    LKMotorSetRef(r_driven, right_ref);
 }

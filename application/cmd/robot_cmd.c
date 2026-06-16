@@ -1,6 +1,7 @@
 // app
 #include "robot_def.h"
 #include "robot_cmd.h"
+#include "balance.h"
 // module
 #include "remote_control.h"
 #include "flysky.h"
@@ -121,12 +122,15 @@ static void RemoteControlSet()
     chassis_cmd_send.wz = fs_data->rocker_r_*0.004;
     if(fs_data->switch_l1 ==1){
         robot_state = ROBOT_STOP;
+        chassis_cmd_send.chassis_mode = CHASSIS_ZERO_FORCE;
     }
     else if(fs_data->switch_l1 == 2 && fs_data->switch_r2 ==1){
         robot_state = ROBOT_READY;
+        chassis_cmd_send.chassis_mode = CHASSIS_JOINT_ZERO_FORCE;
     }
     else if(fs_data->switch_l1 == 2 && fs_data->switch_r2 ==2){
-        robot_state = ROBOT_STAND;
+        robot_state = ROBOT_READY;
+        chassis_cmd_send.chassis_mode = CHASSIS_STAND;
     }
     if(fs_data->switch_r1 == 1){
         chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.002;
@@ -157,15 +161,16 @@ static void MouseKeySet()
  */
 static void EmergencyHandler()
 {
-    
+    if(robot_state==ROBOT_STOP){
+        chassis_cmd_send.vx = 0;
+        chassis_cmd_send.wz = 0;
+        chassis_cmd_send.leg_height_l = 0.15;
+        chassis_cmd_send.leg_height_r = 0.15;
+        BalanceMotorStopAll();
+    }
 }
 
-void vofa_test()
-{
-    float a[2]={1,2};
-    vofa_justfloat_output(a,2,&huart7);
-    
-}
+
 /* 机器人核心控制任务,200Hz频率运行(必须高于视觉发送频率) */
 void RobotCMDTask()
 {
