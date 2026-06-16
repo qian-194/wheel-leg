@@ -25,6 +25,21 @@ static void ApplyLegForceFeedforward(BalanceState *state)
     state->right.F_leg = ClampFloat(base_force, 0.0f, LEG_FORCE_MAX);
 }
 
+static float CalcLegLengthForce(const LinkNPodParam *leg)
+{
+    const float gravity_ff = 0.5f * BODY_MASS * BALANCE_GRAVITY * LEG_GRAVITY_FF_GAIN;
+    const float len_error = leg->target_len - leg->leg_len;
+    const float force = LEG_LEN_KP * len_error - LEG_LEN_KD * leg->legd + gravity_ff;
+
+    return ClampFloat(force, 0.0f, LEG_FORCE_MAX);
+}
+
+static void ApplyLegLengthControl(BalanceState *state)
+{
+    state->left.F_leg = CalcLegLengthForce(&state->left);
+    state->right.F_leg = CalcLegLengthForce(&state->right);
+}
+
 static void VMCProject(LinkNPodParam *leg)
 {
     const float phi12 = leg->phi1 - leg->phi2;
@@ -49,7 +64,7 @@ void BalanceControlUpdate(BalanceState *state, float dt)
 {
     if (state == 0) return;
 
-    ApplyLegForceFeedforward(state);
+    ApplyLegLengthControl(state);
     VMCProject(&state->left);
     VMCProject(&state->right);
 
