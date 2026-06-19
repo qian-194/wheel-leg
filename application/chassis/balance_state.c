@@ -15,16 +15,72 @@ static float SafeSqrt(float x)
     return sqrtf(x > 0.0f ? x : 0.0f);
 }
 
+static float Max3Float(float a, float b, float c)
+{
+    float max = (a > b) ? a : b;
+    return (max > c) ? max : c;
+}
+
+static float SaturateFloat(float value)
+{
+    return ClampFloat(value, 0.0f, 1.0f);
+}
+
+static float LowPassFloat(float last, float input, float alpha)
+{
+    return last + alpha * (input - last);
+}
+
+static float MapToConfidence(float value, float low, float high)
+{
+    if (high <= low) return 0.0f;
+    return SaturateFloat((value - low) / (high - low));
+}
+
+static void InitContactSlipState(LegContactSlipState *state)
+{
+    if (state == 0) return;
+
+    memset(state, 0, sizeof(*state));
+    state->contact_conf = 1.0f;
+    state->contact_flag = 1u;
+    state->contact_state = LEG_CONTACT;
+}
+
 void BalanceStateReset(BalanceState *state)
 {
     if (state == 0) return;
 
     memset(state, 0, sizeof(*state));
 
+    const float gravity_ff = 0.5f * BODY_MASS * BALANCE_GRAVITY * LEG_GRAVITY_FF_GAIN;
+
     state->left.target_len = L0_INIT;
     state->right.target_len = L0_INIT;
     state->left.leg_len = L0_INIT;
     state->right.leg_len = L0_INIT;
+    state->left.F_leg = gravity_ff;
+    state->right.F_leg = gravity_ff;
+    state->left.normal_force = 0.5f * BODY_MASS * BALANCE_GRAVITY;
+    state->right.normal_force = 0.5f * BODY_MASS * BALANCE_GRAVITY;
+    state->left.fly_flag = 0u;
+    state->right.fly_flag = 0u;
+    InitContactSlipState(&state->left.contact_slip);
+    InitContactSlipState(&state->right.contact_slip);
+
+    LADRC2_Init_Config_s leg_len_adrc_config = {
+        .b0 = LEG_LEN_ADRC_B0,
+        .wo = LEG_LEN_ADRC_WO,
+        .kp = LEG_LEN_KP * LEG_LEN_ADRC_B0,
+        .kd = LEG_LEN_KD * LEG_LEN_ADRC_B0,
+        .max_out = LEG_FORCE_MAX,
+        .z1_init = L0_INIT,
+        .z2_init = 0.0f,
+        .z3_init = 0.0f,
+    };
+
+    LADRC2Init(&state->left.leg_len_adrc, &leg_len_adrc_config);
+    LADRC2Init(&state->right.leg_len_adrc, &leg_len_adrc_config);
 
     state->chassis.vel_cov = 100.0f;
     state->chassis.cali_flag = 1u;
@@ -195,6 +251,214 @@ static void EstimateSpeed(LinkNPodParam *left,
     }
 }
 
+static void UpdateSlipFlag(LegContactSlipState *state, float dt)
+{
+    if (state == 0 || dt <= 0.0f) return;
+
+    if (state->slip_flag == 0u)
+    {
+        state->slip_off_time = 0.0f;
+        if (state->slip_conf > BALANCE_SLIP_ON_CONF)
+        {
+            state->slip_on_time += dt;
+            if (state->slip_on_time >= BALANCE_SLIP_ON_TIME)
+            {
+                state->slip_flag = 1u;
+                state->slip_on_time = 0.0f;
+            }
+        }
+        else
+        {
+            state->slip_on_time = 0.0f;
+        }
+    }
+    else
+    {
+        state->slip_on_time = 0.0f;
+        if (state->slip_conf < BALANCE_SLIP_OFF_CONF)
+        {
+            state->slip_off_time += dt;
+            if (state->slip_off_time >= BALANCE_SLIP_OFF_TIME)
+            {
+                state->slip_flag = 0u;
+                state->slip_off_time = 0.0f;
+            }
+        }
+        else
+        {
+            state->slip_off_time = 0.0f;
+        }
+    }
+}
+
+static void UpdateLegSlipState(LinkNPodParam *leg,
+                               float predicted_wheel_w,
+                               float dt)
+{
+    if (leg == 0 || dt <= 0.0f) return;
+
+    const float residual = leg->wheel_w - predicted_wheel_w;
+    const float denom = Max3Float(fabsf(leg->wheel_w),
+                                  fabsf(predicted_wheel_w),
+                                  BALANCE_SLIP_W_MIN);
+    const float raw_score = fabsf(residual) / denom;
+
+    leg->contact_slip.slip_score = LowPassFloat(leg->contact_slip.slip_score,
+                                                raw_score,
+                                                BALANCE_SLIP_ALPHA);
+    leg->contact_slip.slip_conf = MapToConfidence(leg->contact_slip.slip_score,
+                                                  BALANCE_SLIP_LOW,
+                                                  BALANCE_SLIP_HIGH);
+    UpdateSlipFlag(&leg->contact_slip, dt);
+}
+
+static void UpdateSlipState(LinkNPodParam *left,
+                            LinkNPodParam *right,
+                            const ChassisParam *chassis,
+                            float dt)
+{
+    if (left == 0 || right == 0 || chassis == 0 || dt <= 0.0f) return;
+
+    const float left_w_pred = (chassis->vel - TWO_WHEEL_HALF_TRACK_M * chassis->wz) / WHEEL_RADIUS;
+    const float right_w_pred = (chassis->vel + TWO_WHEEL_HALF_TRACK_M * chassis->wz) / WHEEL_RADIUS;
+
+    UpdateLegSlipState(left, left_w_pred, dt);
+    UpdateLegSlipState(right, right_w_pred, dt);
+}
+
+static void UpdateContactFlag(LegContactSlipState *state, float dt)
+{
+    if (state == 0 || dt <= 0.0f) return;
+
+    if (state->contact_flag != 0u)
+    {
+        state->contact_on_time = 0.0f;
+        if (state->contact_conf < BALANCE_CONTACT_OFF_CONF)
+        {
+            state->contact_off_time += dt;
+            if (state->contact_off_time >= BALANCE_CONTACT_OFF_TIME)
+            {
+                state->contact_flag = 0u;
+                state->contact_off_time = 0.0f;
+            }
+        }
+        else
+        {
+            state->contact_off_time = 0.0f;
+        }
+    }
+    else
+    {
+        state->contact_off_time = 0.0f;
+        if (state->contact_conf > BALANCE_CONTACT_ON_CONF)
+        {
+            state->contact_on_time += dt;
+            if (state->contact_on_time >= BALANCE_CONTACT_ON_TIME)
+            {
+                state->contact_flag = 1u;
+                state->contact_on_time = 0.0f;
+            }
+        }
+        else
+        {
+            state->contact_on_time = 0.0f;
+        }
+    }
+}
+
+static void UpdateContactStateMachine(LegContactSlipState *state, float dt)
+{
+    if (state == 0 || dt <= 0.0f) return;
+
+    switch (state->contact_state)
+    {
+    case LEG_CONTACT:
+        state->landing_flag = 0u;
+        state->landing_time = 0.0f;
+        if (state->contact_conf < BALANCE_CONTACT_LIGHT_UNLOAD_CONF)
+        {
+            state->contact_state = LEG_LIGHT_UNLOAD;
+        }
+        break;
+
+    case LEG_LIGHT_UNLOAD:
+        if (state->contact_conf >= BALANCE_CONTACT_ON_CONF)
+        {
+            state->contact_state = LEG_CONTACT;
+        }
+        else if (state->contact_conf < BALANCE_CONTACT_AIRBORNE_CONF &&
+                 state->contact_flag == 0u)
+        {
+            state->contact_state = LEG_AIRBORNE;
+        }
+        break;
+
+    case LEG_AIRBORNE:
+        if (state->contact_conf > BALANCE_CONTACT_LANDING_CONF &&
+            state->contact_flag != 0u)
+        {
+            state->contact_state = LEG_LANDING;
+            state->landing_flag = 1u;
+            state->landing_time = 0.0f;
+        }
+        break;
+
+    case LEG_LANDING:
+        state->landing_flag = 1u;
+        state->landing_time += dt;
+        if (state->landing_time >= BALANCE_LANDING_PROTECT_TIME)
+        {
+            state->landing_flag = 0u;
+            state->landing_time = 0.0f;
+            state->contact_state = (state->contact_conf >= BALANCE_CONTACT_LIGHT_UNLOAD_CONF) ?
+                                   LEG_CONTACT :
+                                   LEG_LIGHT_UNLOAD;
+        }
+        break;
+
+    default:
+        state->contact_state = LEG_CONTACT;
+        state->landing_flag = 0u;
+        state->landing_time = 0.0f;
+        break;
+    }
+}
+
+static void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float dt)
+{
+    if (leg == 0 || dt <= 0.0f) return;
+
+    // F_leg 在 BalanceControlUpdate() 中更新，因此这里使用的是上一控制周期的腿向力。
+    leg->normal_force = leg->F_leg;
+
+    const float support_score = (nominal_force > 0.0f) ?
+                                ClampFloat(leg->normal_force / nominal_force, 0.0f, 2.0f) :
+                                0.0f;
+    const float contact_raw = MapToConfidence(support_score,
+                                              BALANCE_CONTACT_OFF_RATIO,
+                                              BALANCE_CONTACT_ON_RATIO);
+
+    leg->contact_slip.contact_conf = LowPassFloat(leg->contact_slip.contact_conf,
+                                                  contact_raw,
+                                                  BALANCE_CONTACT_ALPHA);
+    UpdateContactFlag(&leg->contact_slip, dt);
+    UpdateContactStateMachine(&leg->contact_slip, dt);
+
+    leg->fly_flag = (leg->contact_slip.contact_flag == 0u) ? 1u : 0u;
+}
+
+static void UpdateContactState(LinkNPodParam *left,
+                               LinkNPodParam *right,
+                               float dt)
+{
+    if (left == 0 || right == 0 || dt <= 0.0f) return;
+
+    const float nominal_force = 0.5f * BODY_MASS * BALANCE_GRAVITY;
+
+    UpdateLegContactState(left, nominal_force, dt);
+    UpdateLegContactState(right, nominal_force, dt);
+}
+
 static void FillDebugState(const LinkNPodParam *left,
                            const LinkNPodParam *right,
                            ChassisParam *chassis)
@@ -227,5 +491,7 @@ void BalanceStateUpdate(BalanceState *state,
     Link2Leg(&state->right, &state->chassis);
 
     EstimateSpeed(&state->left, &state->right, &state->chassis, dt);
+    UpdateSlipState(&state->left, &state->right, &state->chassis, dt);
+    UpdateContactState(&state->left, &state->right, dt);
     FillDebugState(&state->left, &state->right, &state->chassis);
 }

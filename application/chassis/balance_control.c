@@ -25,19 +25,50 @@ static void ApplyLegForceFeedforward(BalanceState *state)
     state->right.F_leg = ClampFloat(base_force, 0.0f, LEG_FORCE_MAX);
 }
 
-static float CalcLegLengthForce(const LinkNPodParam *leg)
+static float CalcLegLengthDisturbanceCompensation(LinkNPodParam *leg, float dt)
+{
+#if LEG_LEN_ADRC_ENABLE
+    if (leg == 0 || dt <= 0.0f || LEG_LEN_ADRC_B0 <= 0.0f)
+        return 0.0f;
+
+    // 使用上一周期实际写入的 F_leg 更新 LESO，避免用未限幅的理论输出污染扰动估计。
+    leg->leg_len_adrc_output = LADRC2UpdateWithInput(&leg->leg_len_adrc,
+                                                     leg->target_len,
+                                                     0.0f,
+                                                     leg->leg_len,
+                                                     leg->F_leg,
+                                                     dt);
+    leg->leg_len_disturbance_acc = leg->leg_len_adrc.eso.z3;
+
+    const float compensation = ClampFloat(-leg->leg_len_disturbance_acc / LEG_LEN_ADRC_B0,
+                                          -LEG_LEN_ADRC_DISTURBANCE_MAX,
+                                          LEG_LEN_ADRC_DISTURBANCE_MAX);
+    leg->leg_len_disturbance_force = LEG_LEN_ADRC_DISTURBANCE_GAIN * compensation;
+    return leg->leg_len_disturbance_force;
+#else
+    (void)leg;
+    (void)dt;
+    return 0.0f;
+#endif
+}
+
+static float CalcLegLengthForce(LinkNPodParam *leg, float dt)
 {
     const float gravity_ff = 0.5f * BODY_MASS * BALANCE_GRAVITY * LEG_GRAVITY_FF_GAIN;
     const float len_error = leg->target_len - leg->leg_len;
-    const float force = LEG_LEN_KP * len_error - LEG_LEN_KD * leg->legd + gravity_ff;
+    const float disturbance_compensation = CalcLegLengthDisturbanceCompensation(leg, dt);
+    const float force = LEG_LEN_KP * len_error -
+                        LEG_LEN_KD * leg->legd +
+                        gravity_ff +
+                        disturbance_compensation;
 
     return ClampFloat(force, 0.0f, LEG_FORCE_MAX);
 }
 
-static void ApplyLegLengthControl(BalanceState *state)
+static void ApplyLegLengthControl(BalanceState *state, float dt)
 {
-    state->left.F_leg = CalcLegLengthForce(&state->left);
-    state->right.F_leg = CalcLegLengthForce(&state->right);
+    state->left.F_leg = CalcLegLengthForce(&state->left, dt);
+    state->right.F_leg = CalcLegLengthForce(&state->right, dt);
 }
 
 static void VMCProject(LinkNPodParam *leg)
@@ -64,9 +95,7 @@ void BalanceControlUpdate(BalanceState *state, float dt)
 {
     if (state == 0) return;
 
-    ApplyLegLengthControl(state);
+    ApplyLegLengthControl(state, dt);
     VMCProject(&state->left);
     VMCProject(&state->right);
-
-    (void)dt;
 }

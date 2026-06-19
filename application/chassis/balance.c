@@ -55,7 +55,6 @@ static float joint_pos_max[JOINT_CNT] = {LF_MAX, LB_MAX, RF_MAX, RB_MAX}; // 四
 /* 私有函数计算的中介变量,设为静态避免参数传递的开销 */
 static float chassis_vx, chassis_vy;     // 将云台系的速度投影到底盘
 
-#define TWO_WHEEL_TRACK_WIDTH_M ((float)TRACK_WIDTH * 0.001f)
 #define TWO_WHEEL_OPEN_LOOP_GAIN 200.0f
 #define TWO_WHEEL_OPEN_LOOP_MAX 600.0f
 #define JOINT_CALI_SPEED_TH 0.05f
