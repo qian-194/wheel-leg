@@ -112,6 +112,24 @@ void HTMotorSetRef(HTMotorInstance *motor, float ref);
 void HTMotorSetMITRef(HTMotorInstance *motor, float position, float velocity, float kp, float kd, float torque);
 
 /**
+ * @brief 软件计算MIT控制输出的力矩值
+ *
+ * @param motor 电机实例
+ * @param position 目标位置,单位rad
+ * @param velocity 目标速度,单位rad/s
+ * @param kp 位置刚度,N-m/rad
+ * @param kd 速度阻尼,N-m/rad/s
+ * @param torque_ff 前馈力矩,N-m
+ * @return 最终输出力矩,N-m
+ */
+float HTMotorCalcMITTorque(const HTMotorInstance *motor,
+                           float position,
+                           float velocity,
+                           float kp,
+                           float kd,
+                           float torque_ff);
+
+/**
  * @brief 初始化电机任务,若要使用,需要在motortask的死循环前调用
  *
  */

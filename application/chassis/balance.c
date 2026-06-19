@@ -105,7 +105,7 @@ void BalanceInit()
         .motor_mode = MIT_MODE,
     };
     // 左关节
-    joint_conf.can_init_config.can_handle = &hcan2;
+    joint_conf.can_init_config.can_handle = &hcan1;
     joint_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL; // 左关节不反向
 
     joint_conf.can_init_config.tx_id = 2;
@@ -116,7 +116,7 @@ void BalanceInit()
     joint[LB] = lb = HTMotorInit(&joint_conf);
 
     // 右关节
-    joint_conf.can_init_config.can_handle = &hcan1;
+    joint_conf.can_init_config.can_handle = &hcan2;
     joint_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_REVERSE; // 右关节反向
 
     joint_conf.can_init_config.tx_id = 1;
@@ -128,7 +128,6 @@ void BalanceInit()
 
     // 驱动轮电机
     Motor_Init_Config_s driven_conf = {
-        .can_init_config.can_handle = &hcan2,
         .controller_param_init_config = {
             .angle_PID = {
                 .Kp = 300,
@@ -159,12 +158,14 @@ void BalanceInit()
         .motor_type = LK9025,
         .motor_mode = TORQUE_MODE,
     };
-    // driven_conf.can_init_config.can_handle = &hcan2;
+    // driven_l_conf.can_init_config.can_handle = &hcan1;
+    driven_conf.can_init_config.can_handle = &hcan1,
     driven_conf.can_init_config.tx_id = 1;
     driven_conf.can_init_config.rx_id = 1;
     driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_REVERSE; // 左轮反向
     driven[LD] = l_driven = LKMotorInit(&driven_conf);
-    // driven_conf.can_init_config.can_handle = &hcan2;
+    // driven_r_conf.can_init_config.can_handle = &hcan2;
+    driven_conf.can_init_config.can_handle = &hcan2,
     driven_conf.can_init_config.tx_id = 2;
     driven_conf.can_init_config.rx_id = 2;
     driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL;

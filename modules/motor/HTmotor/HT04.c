@@ -163,6 +163,10 @@ HTMotorInstance *HTMotorInit(Motor_Init_Config_s *config)
 void HTMotorSetRef(HTMotorInstance *motor, float ref)
 {
     motor->pid_ref = ref;
+    motor->mit_ref.position = 0.0f;
+    motor->mit_ref.velocity = 0.0f;
+    motor->mit_ref.kp = 0.0f;
+    motor->mit_ref.kd = 0.0f;
     motor->mit_ref.torque = ref;
 }
 
@@ -173,6 +177,39 @@ void HTMotorSetMITRef(HTMotorInstance *motor, float position, float velocity, fl
     motor->mit_ref.kp = kp;
     motor->mit_ref.kd = kd;
     motor->mit_ref.torque = torque;
+}
+
+float HTMotorCalcMITTorque(const HTMotorInstance *motor,
+                           float position,
+                           float velocity,
+                           float kp,
+                           float kd,
+                           float torque_ff)
+{
+    if (motor == NULL)
+        return 0.0f;
+
+    LIMIT_MIN_MAX(position, HT_P_MIN, HT_P_MAX);
+    LIMIT_MIN_MAX(velocity, HT_V_MIN, HT_V_MAX);
+    LIMIT_MIN_MAX(kp, HT_KP_MIN, HT_KP_MAX);
+    LIMIT_MIN_MAX(kd, HT_KD_MIN, HT_KD_MAX);
+    LIMIT_MIN_MAX(torque_ff, HT_T_MIN, HT_T_MAX);
+
+    float measure_position = motor->measure.total_angle;
+    float measure_velocity = motor->measure.speed_rads;
+
+    if (motor->motor_settings.motor_reverse_flag == MOTOR_DIRECTION_REVERSE)
+    {
+        measure_position *= -1.0f;
+        measure_velocity *= -1.0f;
+    }
+
+    float torque = kp * (position - measure_position) +
+                   kd * (velocity - measure_velocity) +
+                   torque_ff;
+
+    LIMIT_MIN_MAX(torque, HT_T_MIN, HT_T_MAX);
+    return torque;
 }
 
 /**
@@ -193,17 +230,21 @@ __attribute__((noreturn)) void HTMotorTask(void const *argument)
         {
             HTMotor_MIT_Ref_t mit_ref = motor->mit_ref;
 
-            if (setting->motor_reverse_flag == MOTOR_DIRECTION_REVERSE)
-            {
-                mit_ref.position *= -1.0f;
-                mit_ref.velocity *= -1.0f;
-                mit_ref.torque *= -1.0f;
-            }
+            set = HTMotorCalcMITTorque(motor,
+                                       mit_ref.position,
+                                       mit_ref.velocity,
+                                       mit_ref.kp,
+                                       mit_ref.kd,
+                                       mit_ref.torque);
 
+            if (setting->motor_reverse_flag == MOTOR_DIRECTION_REVERSE)
+                set *= -1.0f;
+
+            LIMIT_MIN_MAX(set, HT_T_MIN, HT_T_MAX);
             if (motor->stop_flag == MOTOR_STOP)
-                HTMotorPackMITFrame(motor, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-            else
-                HTMotorPackMITFrame(motor, mit_ref.position, mit_ref.velocity, mit_ref.kp, mit_ref.kd, mit_ref.torque);
+                set = 0.0f;
+
+            HTMotorPackMITFrame(motor, 0.0f, 0.0f, 0.0f, 0.0f, set);
 
             CANTransmit(motor_can, 0.5);
             osDelay(1);

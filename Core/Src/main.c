@@ -65,7 +65,7 @@ uint8_t  W25Qxx_ReadBuffer[W25Qxx_NumByteToTest];		//	ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void MX_FREERTOS_Init(void);
+void MX_FREERTOS_Init(void); 
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */

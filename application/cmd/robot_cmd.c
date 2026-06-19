@@ -132,16 +132,18 @@ static void RemoteControlSet()
         robot_state = ROBOT_READY;
         chassis_cmd_send.chassis_mode = CHASSIS_STAND;
     }
-    if(fs_data->switch_r1 == 1){
-        chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.002;
-        chassis_cmd_send.leg_height_r += fs_data->rocker_l1*0.002;
-    }
-    else if(fs_data->switch_r1 == 3){
-        chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.002;
-    }
-    else if(fs_data->switch_r1 == 2){
-        chassis_cmd_send.leg_height_r += fs_data->rocker_l1*0.02;
-    }
+    chassis_cmd_send.leg_height_l=0.15;
+    chassis_cmd_send.leg_height_r=0.15;
+    // if(fs_data->switch_r1 == 1){
+    //     chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.00002;
+    //     chassis_cmd_send.leg_height_r += fs_data->rocker_l1*0.00002;
+    // }
+    // else if(fs_data->switch_r1 == 3){
+    //     chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.00002;
+    // }
+    // else if(fs_data->switch_r1 == 2){
+    //     chassis_cmd_send.leg_height_r += fs_data->rocker_l1*0.00002;
+    // }
 }
 
 /**
