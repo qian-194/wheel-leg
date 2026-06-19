@@ -82,6 +82,34 @@ void BalanceStateReset(BalanceState *state)
     LADRC2Init(&state->left.leg_len_adrc, &leg_len_adrc_config);
     LADRC2Init(&state->right.leg_len_adrc, &leg_len_adrc_config);
 
+    LESO2_Init_Config_s pitch_leso_config = {
+        .b0 = PITCH_LESO_B0,
+        .wo = PITCH_LESO_WO,
+        .z1_init = 0.0f,
+        .z2_init = 0.0f,
+        .z3_init = 0.0f,
+    };
+    LESO2_Init_Config_s roll_leso_config = {
+        .b0 = ROLL_LESO_B0,
+        .wo = ROLL_LESO_WO,
+        .z1_init = 0.0f,
+        .z2_init = 0.0f,
+        .z3_init = 0.0f,
+    };
+    LESO1_Init_Config_s wheel_speed_leso_config = {
+        .b0 = WHEEL_SPEED_LESO_B0,
+        .wo = WHEEL_SPEED_LESO_WO,
+        .z1_init = 0.0f,
+        .z2_init = 0.0f,
+    };
+
+    LESO2Init(&state->chassis.pitch_leso, &pitch_leso_config);
+    LESO2Init(&state->chassis.roll_leso, &roll_leso_config);
+    LESO1Init(&state->left.wheel_speed_leso, &wheel_speed_leso_config);
+    LESO1Init(&state->right.wheel_speed_leso, &wheel_speed_leso_config);
+    state->chassis.pitch_wheel_torque_ratio = ClampFloat(PITCH_WHEEL_TORQUE_RATIO, 0.0f, 1.0f);
+    state->chassis.pitch_joint_torque_ratio = 1.0f - state->chassis.pitch_wheel_torque_ratio;
+
     state->chassis.vel_cov = 100.0f;
     state->chassis.cali_flag = 1u;
 }
@@ -459,6 +487,62 @@ static void UpdateContactState(LinkNPodParam *left,
     UpdateLegContactState(right, nominal_force, dt);
 }
 
+static void UpdateAttitudeLesoState(BalanceState *state, float dt)
+{
+    if (state == 0 || dt <= 0.0f) return;
+
+    state->chassis.pitch_wheel_torque_ratio = ClampFloat(PITCH_WHEEL_TORQUE_RATIO, 0.0f, 1.0f);
+    state->chassis.pitch_joint_torque_ratio = 1.0f - state->chassis.pitch_wheel_torque_ratio;
+
+#if BALANCE_ATTITUDE_LESO_ENABLE
+    // 当前 pitch/roll 控制力矩尚未形成闭环，这里用上一周期轮端/髋关节力矩作为观测器弱输入。
+    const float pitch_input = state->chassis.pitch_wheel_torque_ratio *
+                              0.5f * (state->left.T_wheel + state->right.T_wheel) +
+                              state->chassis.pitch_joint_torque_ratio *
+                              0.5f * (state->left.T_hip + state->right.T_hip);
+    const float roll_input = 0.5f * (state->right.T_hip - state->left.T_hip);
+
+    LESO2Update(&state->chassis.pitch_leso, state->chassis.pitch, pitch_input, dt);
+    LESO2Update(&state->chassis.roll_leso, state->chassis.roll, roll_input, dt);
+
+    state->chassis.pitch_leso_angle = state->chassis.pitch_leso.z1;
+    state->chassis.pitch_leso_rate = state->chassis.pitch_leso.z2;
+    state->chassis.pitch_disturbance = state->chassis.pitch_leso.z3;
+    state->chassis.roll_leso_angle = state->chassis.roll_leso.z1;
+    state->chassis.roll_leso_rate = state->chassis.roll_leso.z2;
+    state->chassis.roll_disturbance = state->chassis.roll_leso.z3;
+#else
+    state->chassis.pitch_leso_angle = state->chassis.pitch;
+    state->chassis.pitch_leso_rate = state->chassis.pitch_w;
+    state->chassis.pitch_disturbance = 0.0f;
+    state->chassis.roll_leso_angle = state->chassis.roll;
+    state->chassis.roll_leso_rate = state->chassis.roll_w;
+    state->chassis.roll_disturbance = 0.0f;
+#endif
+}
+
+static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
+                                      LinkNPodParam *right,
+                                      float dt)
+{
+    if (left == 0 || right == 0 || dt <= 0.0f) return;
+
+#if BALANCE_WHEEL_SPEED_LESO_ENABLE
+    LESO1Update(&left->wheel_speed_leso, left->wheel_w, left->T_wheel, dt);
+    LESO1Update(&right->wheel_speed_leso, right->wheel_w, right->T_wheel, dt);
+
+    left->wheel_w_leso = left->wheel_speed_leso.z1;
+    left->wheel_speed_disturbance = left->wheel_speed_leso.z2;
+    right->wheel_w_leso = right->wheel_speed_leso.z1;
+    right->wheel_speed_disturbance = right->wheel_speed_leso.z2;
+#else
+    left->wheel_w_leso = left->wheel_w;
+    left->wheel_speed_disturbance = 0.0f;
+    right->wheel_w_leso = right->wheel_w;
+    right->wheel_speed_disturbance = 0.0f;
+#endif
+}
+
 static void FillDebugState(const LinkNPodParam *left,
                            const LinkNPodParam *right,
                            ChassisParam *chassis)
@@ -491,6 +575,8 @@ void BalanceStateUpdate(BalanceState *state,
     Link2Leg(&state->right, &state->chassis);
 
     EstimateSpeed(&state->left, &state->right, &state->chassis, dt);
+    UpdateAttitudeLesoState(state, dt);
+    UpdateWheelSpeedLesoState(&state->left, &state->right, dt);
     UpdateSlipState(&state->left, &state->right, &state->chassis, dt);
     UpdateContactState(&state->left, &state->right, dt);
     FillDebugState(&state->left, &state->right, &state->chassis);

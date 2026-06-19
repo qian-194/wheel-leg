@@ -6,6 +6,7 @@
 #include "HT04.h"
 #include "LK9025.h"
 #include "adrc.h"
+#include "leso.h"
 
 // 底盘参数
 #define CALF_LEN 0.288f              // 小腿
@@ -46,6 +47,15 @@
 #define LEG_LEN_ADRC_WO 35.0f        // 腿长 LESO 观测器带宽,rad/s
 #define LEG_LEN_ADRC_DISTURBANCE_GAIN 0.25f // 扰动补偿注入系数; 先小比例接入,上车后逐步调
 #define LEG_LEN_ADRC_DISTURBANCE_MAX 60.0f  // 单腿 ADRC 扰动补偿力限幅,N
+#define BALANCE_ATTITUDE_LESO_ENABLE 0 // pitch/roll 二阶 LESO 使能; 0 时只保留原始 IMU 状态
+#define BALANCE_WHEEL_SPEED_LESO_ENABLE 0 // 左右轮速一阶 LESO 使能; 0 时只使用原始轮速
+#define PITCH_LESO_B0 1.0f             // pitch 输入增益估计; 当前 pitch 力矩模型未闭环,先按归一化输入处理
+#define PITCH_LESO_WO 35.0f            // pitch 二阶 LESO 观测器带宽,rad/s
+#define ROLL_LESO_B0 1.0f              // roll 输入增益估计; 当前 roll 力矩模型未闭环,先按归一化输入处理
+#define ROLL_LESO_WO 30.0f             // roll 二阶 LESO 观测器带宽,rad/s
+#define WHEEL_SPEED_LESO_B0 1.0f       // 轮速一阶 LESO 输入增益估计; 输入为上一周期轮端力矩
+#define WHEEL_SPEED_LESO_WO 35.0f      // 轮速一阶 LESO 观测器带宽,rad/s
+#define PITCH_WHEEL_TORQUE_RATIO 0.60f // pitch 控制量分配到轮力矩的比例,剩余部分预留给髋/关节力矩
 #define MAX_ACC_REF 1.2f             // 底盘最大前向加速度,m/s^2
 #define MAX_WZ_ACC_REF 3.5f          // 底盘最大角加速度,rad/s^2
 
@@ -160,6 +170,9 @@ typedef struct
     float leg_len_disturbance_acc; // 腿长 LESO 估计的总扰动加速度,m/s^2
     float leg_len_disturbance_force; // 由扰动估计换算出的补偿力,N
     float leg_len_adrc_output; // 完整 LADRC 输出,当前仅用于调试观察
+    LESO1Instance wheel_speed_leso; // 单侧轮速一阶 LESO
+    float wheel_w_leso;             // LESO 估计轮速,rad/s
+    float wheel_speed_disturbance;  // 轮速总扰动估计,rad/s^2
 
     float coord[6]; // xb yb xc yc xd yd
 
@@ -187,6 +200,16 @@ typedef struct
     float yaw, wz;              // 底盘偏航角度和角速度,逆时针自旋为+，单位：rad,rad/s
     float pitch, pitch_w;       // 底盘俯仰角度和角速度,上翘为+，单位：rad,rad/s
     float roll, roll_w;         // 底盘横滚角度和角速度,右倾为+，单位：rad,rad/s
+    LESO2Instance pitch_leso;   // pitch 二阶 LESO
+    LESO2Instance roll_leso;    // roll 二阶 LESO
+    float pitch_leso_angle;     // LESO 估计 pitch,rad
+    float pitch_leso_rate;      // LESO 估计 pitch 角速度,rad/s
+    float pitch_disturbance;    // LESO 估计 pitch 总扰动,rad/s^2
+    float roll_leso_angle;      // LESO 估计 roll,rad
+    float roll_leso_rate;       // LESO 估计 roll 角速度,rad/s
+    float roll_disturbance;     // LESO 估计 roll 总扰动,rad/s^2
+    float pitch_wheel_torque_ratio; // pitch 控制量分配到轮力矩的比例
+    float pitch_joint_torque_ratio; // pitch 控制量分配到髋/关节力矩的比例
     
     float dgyro[3];             // 底盘的角加速度
     float MotionAccel_b[3];     // 底盘在机体坐标系下的IMU加速度，前x,右z,上y
