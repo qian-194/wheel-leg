@@ -42,6 +42,8 @@
 #define LEG_LEN_KD 20.0f             // 腿长 PD 速度阻尼,N/(m/s)
 #define LEG_FORCE_MAX 200.0f         // 单腿腿向支撑力输出上限,N
 #define LEG_VMC_SIN_MIN 0.05f        // VMC 雅可比分母 sin 最小绝对值,防止奇异点除数过小
+// TODO: 核对 BalanceTask 实际调度频率(Hz); 暂按 balance_state.c 中 predict_dt=0.002f 取 500
+#define BALANCE_CONTROL_FREQ 500.0f  // 平衡控制回路标称频率,Hz; LESO/ADRC 据此派生内部步长 dt=1/freq
 #define LEG_LEN_ADRC_ENABLE 0        // 腿长 ADRC 扰动补偿使能; 0 为纯 PD+重力前馈
 #define LEG_LEN_ADRC_B0 (2.0f / BODY_MASS) // 腿长对象输入增益估计,(m/s^2)/N; 近似按半车质量估计
 #define LEG_LEN_ADRC_WO 35.0f        // 腿长 LESO 观测器带宽,rad/s

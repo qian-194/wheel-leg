@@ -32,12 +32,12 @@ static float CalcLegLengthDisturbanceCompensation(LinkNPodParam *leg, float dt)
         return 0.0f;
 
     // 使用上一周期实际写入的 F_leg 更新 LESO，避免用未限幅的理论输出污染扰动估计。
+    // LESO 步长由初始化频率派生，不再传 dt；外层 dt 仍用作"回路是否在跑"的门控。
     leg->leg_len_adrc_output = LADRC2UpdateWithInput(&leg->leg_len_adrc,
                                                      leg->target_len,
                                                      0.0f,
                                                      leg->leg_len,
-                                                     leg->F_leg,
-                                                     dt);
+                                                     leg->F_leg);
     leg->leg_len_disturbance_acc = leg->leg_len_adrc.eso.z3;
 
     const float compensation = ClampFloat(-leg->leg_len_disturbance_acc / LEG_LEN_ADRC_B0,

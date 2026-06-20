@@ -71,6 +71,7 @@ void BalanceStateReset(BalanceState *state)
     LADRC2_Init_Config_s leg_len_adrc_config = {
         .b0 = LEG_LEN_ADRC_B0,
         .wo = LEG_LEN_ADRC_WO,
+        .freq = BALANCE_CONTROL_FREQ,
         .kp = LEG_LEN_KP * LEG_LEN_ADRC_B0,
         .kd = LEG_LEN_KD * LEG_LEN_ADRC_B0,
         .max_out = LEG_FORCE_MAX,
@@ -85,6 +86,7 @@ void BalanceStateReset(BalanceState *state)
     LESO2_Init_Config_s pitch_leso_config = {
         .b0 = PITCH_LESO_B0,
         .wo = PITCH_LESO_WO,
+        .freq = BALANCE_CONTROL_FREQ,
         .z1_init = 0.0f,
         .z2_init = 0.0f,
         .z3_init = 0.0f,
@@ -92,6 +94,7 @@ void BalanceStateReset(BalanceState *state)
     LESO2_Init_Config_s roll_leso_config = {
         .b0 = ROLL_LESO_B0,
         .wo = ROLL_LESO_WO,
+        .freq = BALANCE_CONTROL_FREQ,
         .z1_init = 0.0f,
         .z2_init = 0.0f,
         .z3_init = 0.0f,
@@ -99,6 +102,7 @@ void BalanceStateReset(BalanceState *state)
     LESO1_Init_Config_s wheel_speed_leso_config = {
         .b0 = WHEEL_SPEED_LESO_B0,
         .wo = WHEEL_SPEED_LESO_WO,
+        .freq = BALANCE_CONTROL_FREQ,
         .z1_init = 0.0f,
         .z2_init = 0.0f,
     };
@@ -502,8 +506,9 @@ static void UpdateAttitudeLesoState(BalanceState *state, float dt)
                               0.5f * (state->left.T_hip + state->right.T_hip);
     const float roll_input = 0.5f * (state->right.T_hip - state->left.T_hip);
 
-    LESO2Update(&state->chassis.pitch_leso, state->chassis.pitch, pitch_input, dt);
-    LESO2Update(&state->chassis.roll_leso, state->chassis.roll, roll_input, dt);
+    // LESO 步长由初始化频率派生，这里不再传 dt；外层 dt 仍用作"回路是否在跑"的门控。
+    LESO2Update(&state->chassis.pitch_leso, state->chassis.pitch, pitch_input);
+    LESO2Update(&state->chassis.roll_leso, state->chassis.roll, roll_input);
 
     state->chassis.pitch_leso_angle = state->chassis.pitch_leso.z1;
     state->chassis.pitch_leso_rate = state->chassis.pitch_leso.z2;
@@ -528,8 +533,9 @@ static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
     if (left == 0 || right == 0 || dt <= 0.0f) return;
 
 #if BALANCE_WHEEL_SPEED_LESO_ENABLE
-    LESO1Update(&left->wheel_speed_leso, left->wheel_w, left->T_wheel, dt);
-    LESO1Update(&right->wheel_speed_leso, right->wheel_w, right->T_wheel, dt);
+    // LESO 步长由初始化频率派生，这里不再传 dt；外层 dt 仍用作"回路是否在跑"的门控。
+    LESO1Update(&left->wheel_speed_leso, left->wheel_w, left->T_wheel);
+    LESO1Update(&right->wheel_speed_leso, right->wheel_w, right->T_wheel);
 
     left->wheel_w_leso = left->wheel_speed_leso.z1;
     left->wheel_speed_disturbance = left->wheel_speed_leso.z2;
