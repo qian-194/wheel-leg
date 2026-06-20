@@ -65,6 +65,12 @@ static float chassis_vx, chassis_vy;     // 将云台系的速度投影到底盘
 static uint8_t JointCalibEncoder(void);
 static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd);
 
+/**
+ * @brief 初始化平衡底盘应用。
+ *
+ * 完成底盘 IMU、消息发布订阅、四个关节电机、左右驱动轮电机和
+ * BalanceState 的初始化，并启动 DWT 周期计时基准。
+ */
 void BalanceInit()
 {
     Chassis_IMU_data = INS_Init(); // 底盘IMU初始化
@@ -175,7 +181,12 @@ void BalanceInit()
 }
 
 
-/* 机器人底盘控制核心任务 */
+/**
+ * @brief 平衡底盘控制核心周期任务。
+ *
+ * 每周期读取底盘命令、计算真实周期、执行上电关节校准，并根据底盘模式选择
+ * 急停、双轮开环或站立平衡控制。任务末尾会回传底盘反馈数据。
+ */
 void BalanceTask()
 {
     // 后续增加没收到消息的处理(双板的情况)
@@ -244,6 +255,12 @@ void BalanceTask()
 }
 
 
+/**
+ * @brief 停止所有平衡底盘电机。
+ *
+ * 先将四个关节 MIT 参考和左右驱动轮参考清零，再分别停止关节电机与驱动轮电机。
+ * 用于零力模式和安全急停。
+ */
 void BalanceMotorStopAll(void)
 {
     HTMotorSetMITRef(lf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -263,6 +280,12 @@ void BalanceMotorStopAll(void)
     LKMotorStop(r_driven);
 }
 
+/**
+ * @brief 停止四个关节电机。
+ *
+ * 清零四个 HT 关节电机的 MIT 参考并停止关节电机，不影响左右驱动轮状态。
+ * 双轮开环调试模式下用于释放腿部关节输出。
+ */
 void BalanceJointStop(void)
 {
     HTMotorSetMITRef(lf, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -276,6 +299,11 @@ void BalanceJointStop(void)
     HTMotorStop(rb);
 }
 
+/**
+ * @brief 使能所有平衡底盘电机。
+ *
+ * 使能四个 HT 关节电机和左右 LK 驱动轮电机，通常在进入站立控制前调用。
+ */
 void BalanceMotorEnableAll(void)
 {
     HTMotorEnable(lf);
@@ -288,10 +316,12 @@ void BalanceMotorEnableAll(void)
 }
 
 /**
- * @brief HT motors lose position after power cycle, so touch the short-leg
- *        mechanical limit and set that position as encoder zero.
+ * @brief 执行关节电机上电编码器校准。
  *
- * @return uint8_t 1 when all joint motors are calibrated.
+ * HT 关节电机掉电后会丢失绝对位置。校准流程将各关节缓慢推向短腿机械限位，
+ * 当检测到速度足够低且堵转电流足够大并持续确认后，将当前位置标定为编码器零点。
+ *
+ * @return uint8_t 1 表示四个关节均完成校准；0 表示仍在校准过程中。
  */
 static uint8_t JointCalibEncoder(void)
 {
@@ -352,6 +382,14 @@ static uint8_t JointCalibEncoder(void)
     return 1u;
 }
 
+/**
+ * @brief 双轮开环调试控制。
+ *
+ * 根据底盘期望线速度和角速度计算左右轮开环参考，停止关节电机后将左右驱动轮
+ * 切到开环输出。该模式用于关节零力状态下验证驱动轮方向和基础运动。
+ *
+ * @param cmd 当前底盘控制命令。
+ */
 static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd)
 {
     float left_v = cmd->vx - cmd->wz * TWO_WHEEL_TRACK_WIDTH_M * 0.5f;

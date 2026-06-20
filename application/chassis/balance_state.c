@@ -3,6 +3,14 @@
 #include <math.h>
 #include <string.h>
 
+/**
+ * @brief 将浮点数限制在指定闭区间内。
+ *
+ * @param value 待限幅的输入值。
+ * @param min   输出下限。
+ * @param max   输出上限。
+ * @return float 若 value 超出边界则返回对应边界值，否则返回 value。
+ */
 static float ClampFloat(float value, float min, float max)
 {
     if (value < min) return min;
@@ -10,33 +18,82 @@ static float ClampFloat(float value, float min, float max)
     return value;
 }
 
+/**
+ * @brief 计算非负安全平方根。
+ *
+ * 运动学计算中可能因浮点误差出现很小的负数，本函数将负输入钳到 0，
+ * 避免 sqrtf() 产生 NaN 并污染后续状态。
+ *
+ * @param x 待开方数。
+ * @return float sqrt(max(x, 0))。
+ */
 static float SafeSqrt(float x)
 {
     return sqrtf(x > 0.0f ? x : 0.0f);
 }
 
+/**
+ * @brief 返回三个浮点数中的最大值。
+ *
+ * @param a 第一个输入值。
+ * @param b 第二个输入值。
+ * @param c 第三个输入值。
+ * @return float a、b、c 中的最大值。
+ */
 static float Max3Float(float a, float b, float c)
 {
     float max = (a > b) ? a : b;
     return (max > c) ? max : c;
 }
 
+/**
+ * @brief 将浮点数饱和到 [0, 1] 区间。
+ *
+ * @param value 待饱和值。
+ * @return float 限幅后的归一化值。
+ */
 static float SaturateFloat(float value)
 {
     return ClampFloat(value, 0.0f, 1.0f);
 }
 
+/**
+ * @brief 一阶低通滤波更新。
+ *
+ * @param last  上一周期滤波输出。
+ * @param input 当前输入值。
+ * @param alpha 滤波系数，通常位于 [0, 1]，越大响应越快。
+ * @return float 新的滤波输出。
+ */
 static float LowPassFloat(float last, float input, float alpha)
 {
     return last + alpha * (input - last);
 }
 
+/**
+ * @brief 将线性区间内的数值映射为 [0, 1] 置信度。
+ *
+ * value <= low 时输出 0，value >= high 时输出 1，中间线性插值。
+ * 若 high <= low，返回 0 以避免除零。
+ *
+ * @param value 待映射值。
+ * @param low   置信度为 0 的下边界。
+ * @param high  置信度为 1 的上边界。
+ * @return float 归一化置信度。
+ */
 static float MapToConfidence(float value, float low, float high)
 {
     if (high <= low) return 0.0f;
     return SaturateFloat((value - low) / (high - low));
 }
 
+/**
+ * @brief 初始化单腿接触与打滑状态。
+ *
+ * 默认认为腿已接触地面，接触置信度为 1，打滑相关计时与标志清零。
+ *
+ * @param state 待初始化的接触/打滑状态对象。
+ */
 static void InitContactSlipState(LegContactSlipState *state)
 {
     if (state == 0) return;
@@ -47,6 +104,14 @@ static void InitContactSlipState(LegContactSlipState *state)
     state->contact_state = LEG_CONTACT;
 }
 
+/**
+ * @brief 重置整车平衡状态与算法状态。
+ *
+ * 清零 BalanceState 后设置初始腿长、基础支撑力、法向力、接触状态，
+ * 并初始化腿长 ADRC、姿态 LESO、轮速 LESO 等算法实例。
+ *
+ * @param state 待重置的平衡状态对象。
+ */
 void BalanceStateReset(BalanceState *state)
 {
     if (state == 0) return;
@@ -118,6 +183,14 @@ void BalanceStateReset(BalanceState *state)
     state->chassis.cali_flag = 1u;
 }
 
+/**
+ * @brief 从 IMU 数据装配底盘姿态、角速度和加速度状态。
+ *
+ * 这里统一完成坐标符号转换，供后续腿部运动学、速度估计和控制使用。
+ *
+ * @param chassis 待写入的底盘状态。
+ * @param imu     当前 IMU 姿态数据。
+ */
 static void AssembleImuState(ChassisParam *chassis, const attitude_t *imu)
 {
     if (imu == 0) return;
@@ -140,6 +213,17 @@ static void AssembleImuState(ChassisParam *chassis, const attitude_t *imu)
     chassis->MotionAccel_b[Z] = imu->Accel[Z];
 }
 
+/**
+ * @brief 从遥控/上层命令装配目标速度、角速度、偏置角与目标腿长。
+ *
+ * 腿长目标会被限制在机械允许范围内；目标角速度有效时刷新目标 yaw，
+ * 保持转向状态与当前 yaw 对齐。
+ *
+ * @param left    左腿状态。
+ * @param right   右腿状态。
+ * @param chassis 底盘状态。
+ * @param cmd     当前底盘控制命令。
+ */
 static void AssembleTargetState(LinkNPodParam *left,
                                 LinkNPodParam *right,
                                 ChassisParam *chassis,
@@ -164,6 +248,16 @@ static void AssembleTargetState(LinkNPodParam *left,
     }
 }
 
+/**
+ * @brief 从各电机反馈装配左右腿关节角、关节角速度、轮速和轮端里程。
+ *
+ * 函数内统一左右腿电机安装方向和编码器符号，输出后续运动学使用的
+ * phi1/phi4、phi1_w/phi4_w、w_ecd 与 wheel_dist。
+ *
+ * @param left  左腿状态。
+ * @param right 右腿状态。
+ * @param motor 平衡底盘相关电机反馈指针集合。
+ */
 static void AssembleMotorState(LinkNPodParam *left,
                                LinkNPodParam *right,
                                const BalanceMotorFeedback *motor)
@@ -191,6 +285,15 @@ static void AssembleMotorState(LinkNPodParam *left,
     right->wheel_dist = -motor->r_driven->measure.total_angle * WHEEL_RADIUS;
 }
 
+/**
+ * @brief 根据五连杆几何关系计算单腿末端、腿长和相关速度状态。
+ *
+ * 输入为已装配的关节角与底盘 pitch，输出腿部关键角度、端点坐标、
+ * 腿长、腿长速度、摆杆角 theta、theta_w、高度与高度速度。
+ *
+ * @param p       待更新的单腿状态。
+ * @param chassis 当前底盘状态，用于扣除机体 pitch 与 pitch_w。
+ */
 static void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
 {
     float xD, yD, xB, yB, BD, A0, B0, C0, xC, yC;
@@ -250,6 +353,17 @@ static void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
                   p->leg_len * sinf(p->theta) * p->theta_w;
 }
 
+/**
+ * @brief 估计左右腿轮速、机体速度、底盘线速度和里程积分。
+ *
+ * 使用轮端编码器速度、腿部角速度和 pitch_w 估计轮地相对速度；
+ * 当目标速度接近 0 时累计 dist，用作站立位置误差。
+ *
+ * @param left    左腿状态。
+ * @param right   右腿状态。
+ * @param chassis 底盘状态。
+ * @param dt      本次状态更新时间，单位 s。
+ */
 static void EstimateSpeed(LinkNPodParam *left,
                           LinkNPodParam *right,
                           ChassisParam *chassis,
@@ -283,6 +397,14 @@ static void EstimateSpeed(LinkNPodParam *left,
     }
 }
 
+/**
+ * @brief 根据打滑置信度和确认时间更新打滑标志。
+ *
+ * 打滑置位和清除均带时间确认，避免瞬时轮速残差导致标志抖动。
+ *
+ * @param state 单腿接触/打滑状态。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 static void UpdateSlipFlag(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
@@ -323,6 +445,16 @@ static void UpdateSlipFlag(LegContactSlipState *state, float dt)
     }
 }
 
+/**
+ * @brief 更新单腿打滑分数、打滑置信度和打滑标志。
+ *
+ * 通过实测轮速与差速模型预测轮速的相对残差评估打滑程度，
+ * 并对打滑分数做一阶低通滤波。
+ *
+ * @param leg               待更新的单腿状态。
+ * @param predicted_wheel_w 根据底盘速度与 yaw 角速度预测的轮速。
+ * @param dt                本次状态更新时间，单位 s。
+ */
 static void UpdateLegSlipState(LinkNPodParam *leg,
                                float predicted_wheel_w,
                                float dt)
@@ -344,6 +476,17 @@ static void UpdateLegSlipState(LinkNPodParam *leg,
     UpdateSlipFlag(&leg->contact_slip, dt);
 }
 
+/**
+ * @brief 更新左右腿打滑状态。
+ *
+ * 根据两轮差速模型从底盘线速度和 yaw 角速度推算左右轮理论轮速，
+ * 再分别更新左右腿打滑检测状态。
+ *
+ * @param left    左腿状态。
+ * @param right   右腿状态。
+ * @param chassis 底盘状态。
+ * @param dt      本次状态更新时间，单位 s。
+ */
 static void UpdateSlipState(LinkNPodParam *left,
                             LinkNPodParam *right,
                             const ChassisParam *chassis,
@@ -358,6 +501,14 @@ static void UpdateSlipState(LinkNPodParam *left,
     UpdateLegSlipState(right, right_w_pred, dt);
 }
 
+/**
+ * @brief 根据接触置信度和确认时间更新二值接触标志。
+ *
+ * 接触丢失和恢复均带时间确认，避免支撑力估计短时波动造成离地/落地误判。
+ *
+ * @param state 单腿接触/打滑状态。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 static void UpdateContactFlag(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
@@ -398,6 +549,15 @@ static void UpdateContactFlag(LegContactSlipState *state, float dt)
     }
 }
 
+/**
+ * @brief 更新单腿接触状态机。
+ *
+ * 状态机覆盖正常接触、轻载、离地和落地保护阶段；落地阶段会保持
+ * landing_flag 一段保护时间，供控制层在落地瞬间做输出保护。
+ *
+ * @param state 单腿接触/打滑状态。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 static void UpdateContactStateMachine(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
@@ -456,6 +616,15 @@ static void UpdateContactStateMachine(LegContactSlipState *state, float dt)
     }
 }
 
+/**
+ * @brief 更新单腿法向力、接触置信度、接触标志和离地标志。
+ *
+ * 当前法向力估计直接使用上一控制周期写入的 F_leg，并映射为接触置信度。
+ *
+ * @param leg           待更新的单腿状态。
+ * @param nominal_force 标称单腿支撑力，用于归一化接触置信度。
+ * @param dt            本次状态更新时间，单位 s。
+ */
 static void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float dt)
 {
     if (leg == 0 || dt <= 0.0f) return;
@@ -479,6 +648,15 @@ static void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float
     leg->fly_flag = (leg->contact_slip.contact_flag == 0u) ? 1u : 0u;
 }
 
+/**
+ * @brief 更新左右腿接触状态。
+ *
+ * 使用半车重作为标称单腿支撑力，分别更新左右腿接触置信度、状态机和离地标志。
+ *
+ * @param left  左腿状态。
+ * @param right 右腿状态。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 static void UpdateContactState(LinkNPodParam *left,
                                LinkNPodParam *right,
                                float dt)
@@ -491,6 +669,15 @@ static void UpdateContactState(LinkNPodParam *left,
     UpdateLegContactState(right, nominal_force, dt);
 }
 
+/**
+ * @brief 更新 pitch/roll 的 LESO 估计状态或旁路原始 IMU 状态。
+ *
+ * LESO 使能时使用上一周期轮端/髋关节力矩作为弱输入更新 pitch/roll 二阶观测器；
+ * 未使能时直接输出原始姿态和角速度，并清零扰动估计。
+ *
+ * @param state 平衡状态对象。
+ * @param dt    本次状态更新时间，单位 s；此处主要作为回路有效性门控。
+ */
 static void UpdateAttitudeLesoState(BalanceState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
@@ -526,6 +713,16 @@ static void UpdateAttitudeLesoState(BalanceState *state, float dt)
 #endif
 }
 
+/**
+ * @brief 更新左右轮速 LESO 估计状态或旁路原始轮速。
+ *
+ * LESO 使能时使用上一周期轮端力矩更新一阶轮速观测器；
+ * 未使能时直接使用原始轮速，并清零轮速扰动估计。
+ *
+ * @param left  左腿状态。
+ * @param right 右腿状态。
+ * @param dt    本次状态更新时间，单位 s；此处主要作为回路有效性门控。
+ */
 static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
                                       LinkNPodParam *right,
                                       float dt)
@@ -549,6 +746,15 @@ static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
 #endif
 }
 
+/**
+ * @brief 填充底盘调试数组。
+ *
+ * 将当前关键状态按固定顺序写入 chassis->debug，便于在线观测和上位机调试。
+ *
+ * @param left    左腿状态。
+ * @param right   右腿状态。
+ * @param chassis 底盘状态。
+ */
 static void FillDebugState(const LinkNPodParam *left,
                            const LinkNPodParam *right,
                            ChassisParam *chassis)
@@ -565,6 +771,19 @@ static void FillDebugState(const LinkNPodParam *left,
     chassis->debug[9] = chassis->pitch_w;
 }
 
+/**
+ * @brief 平衡状态主更新入口。
+ *
+ * 按固定顺序装配 IMU、目标命令和电机反馈，完成腿部运动学、速度估计、
+ * LESO 状态、打滑检测、接触检测和调试量填充。该函数只更新状态，
+ * 不直接写电机输出。
+ *
+ * @param state 待更新的平衡状态对象。
+ * @param imu   当前 IMU 姿态数据。
+ * @param cmd   当前底盘控制命令。
+ * @param motor 当前电机反馈集合。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 void BalanceStateUpdate(BalanceState *state,
                         const attitude_t *imu,
                         const Chassis_Ctrl_Cmd_s *cmd,

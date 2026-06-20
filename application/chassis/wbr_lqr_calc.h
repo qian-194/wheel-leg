@@ -808,6 +808,10 @@ static inline void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, f
  *
  * 函数仅负责查表插值、组装误差状态和计算 u = -K * error。
  * 输出符号映射、离地保护和力矩限幅必须在后续保护/输出层统一处理。
+ *
+ * @param left    左腿状态，提供左腿腿长、theta/theta_w，并接收左轮和左髋 LQR 输出。
+ * @param right   右腿状态，提供右腿腿长、theta/theta_w，并接收右轮和右髋 LQR 输出。
+ * @param chassis 底盘状态，提供位移、速度、yaw、wz、pitch、pitch_w 及对应目标值。
  */
 static void CalcWbrLQR(LinkNPodParam *left, LinkNPodParam *right, ChassisParam *chassis)
 {

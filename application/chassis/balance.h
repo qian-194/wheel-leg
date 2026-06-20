@@ -241,30 +241,63 @@ typedef struct
     ChassisParam chassis;
 } BalanceState;
 
+/**
+ * @brief 重置平衡状态对象和内部算法状态。
+ *
+ * 初始化左右腿目标、基础支撑力、接触状态、ADRC/LESO 实例和校准标志。
+ *
+ * @param state 待重置的平衡状态对象。
+ */
 void BalanceStateReset(BalanceState *state);
 
+/**
+ * @brief 更新平衡状态估计。
+ *
+ * 装配 IMU、控制命令和电机反馈，计算腿部运动学、速度、打滑/接触状态和调试量。
+ *
+ * @param state 待更新的平衡状态对象。
+ * @param imu   当前 IMU 姿态数据。
+ * @param cmd   当前底盘控制命令。
+ * @param motor 当前平衡底盘相关电机反馈。
+ * @param dt    本次状态更新时间，单位 s。
+ */
 void BalanceStateUpdate(BalanceState *state,
                         const attitude_t *imu,
                         const Chassis_Ctrl_Cmd_s *cmd,
                         const BalanceMotorFeedback *motor,
                         float dt);
 
+/**
+ * @brief 更新平衡控制输出。
+ *
+ * 根据状态估计计算腿长支撑力，并将虚拟腿向力/髋关节力矩投影到关节输出字段。
+ *
+ * @param state 平衡状态对象。
+ * @param dt    本次控制周期，单位 s。
+ */
 void BalanceControlUpdate(BalanceState *state, float dt);
 
-/**  
- * @brief 平衡底盘初始化
- *
+/**
+ * @brief 初始化平衡底盘应用。
  */
 void BalanceInit(void);
 
 /**
- * @brief 平衡底盘任务
- *
+ * @brief 平衡底盘周期任务。
  */
 void BalanceTask(void);
-//全车急停
+
+/**
+ * @brief 停止四个关节电机和左右驱动轮电机。
+ */
 void BalanceMotorStopAll(void);
-//关节急停
+
+/**
+ * @brief 停止四个关节电机，不处理驱动轮。
+ */
 void BalanceJointStop(void);
-//全车使能
+
+/**
+ * @brief 使能四个关节电机和左右驱动轮电机。
+ */
 void BalanceMotorEnableAll(void);
