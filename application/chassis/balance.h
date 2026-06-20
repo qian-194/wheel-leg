@@ -241,6 +241,10 @@ typedef struct
     ChassisParam chassis;
 } BalanceState;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief 重置平衡状态对象和内部算法状态。
  *
@@ -301,3 +305,7 @@ void BalanceJointStop(void);
  * @brief 使能四个关节电机和左右驱动轮电机。
  */
 void BalanceMotorEnableAll(void);
+
+#ifdef __cplusplus
+}
+#endif

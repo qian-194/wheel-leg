@@ -149,7 +149,6 @@ modules/alarm/buzzer.c \
 modules/vofa/vofa.c \
 application/gimbal/gimbal.c \
 application/chassis/balance.c \
-application/chassis/balance_state.c \
 application/chassis/balance_control.c \
 application/shoot/shoot.c \
 application/cmd/robot_cmd.c \
@@ -160,7 +159,11 @@ Core/Src/i2c.c
 # C++ sources
 # C++ 内部实现文件在此登记；对外仍通过 extern "C" 暴露 C 接口。
 CPP_SOURCES =  \
-application/chassis/cpp_toolchain_probe.cpp
+application/chassis/balance_state.cpp \
+application/chassis/leg_kinematics.cpp \
+application/chassis/chassis_estimator.cpp \
+application/chassis/contact_slip_estimator.cpp \
+application/chassis/planner_state.cpp
 
 # ASM sources
 ASM_SOURCES =  \
