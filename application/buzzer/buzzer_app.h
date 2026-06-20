@@ -7,6 +7,7 @@ typedef enum
     BUZZER_APP_SOUND_REMOTE_LOST,
     BUZZER_APP_SOUND_REMOTE_RECOVER,
     BUZZER_APP_SOUND_ERROR,
+    BUZZER_APP_SOUND_SEE_YOU_AGAIN,
 } BuzzerAppSound_e;
 
 void BuzzerAppInit(void);

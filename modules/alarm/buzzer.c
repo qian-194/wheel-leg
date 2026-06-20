@@ -33,6 +33,7 @@ BuzzzerInstance *BuzzerRegister(Buzzer_config_s *config)
     buzzer_temp->alarm_level = config->alarm_level;
     buzzer_temp->loudness = config->loudness;
     buzzer_temp->octave = config->octave;
+    buzzer_temp->frequency_hz = config->frequency_hz;
     buzzer_temp->alarm_state = ALARM_OFF;
 
     buzzer_list[config->alarm_level] = buzzer_temp;
@@ -65,6 +66,12 @@ void BuzzerTask()
         else
         {
             PWMSetDutyRatio(buzzer, buzz->loudness);
+            if (buzz->frequency_hz > 0)
+            {
+                PWMSetPeriod(buzzer, (float)1 / buzz->frequency_hz);
+                break;
+            }
+
             switch (buzz->octave)
             {
             case OCTAVE_1:

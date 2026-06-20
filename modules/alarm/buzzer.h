@@ -1,5 +1,6 @@
 #ifndef BUZZER_H
 #define BUZZER_H
+#include <stdint.h>
 #include "bsp_pwm.h"
 #define BUZZER_DEVICE_CNT 5
 
@@ -41,6 +42,7 @@ typedef struct
 {
     AlarmLevel_e alarm_level;
     octave_e octave;
+    uint16_t frequency_hz;
     float loudness;
 }Buzzer_config_s;
 
@@ -48,6 +50,7 @@ typedef struct
 {
     float loudness;
     octave_e octave;
+    uint16_t frequency_hz;
     AlarmLevel_e alarm_level;
     AlarmState_e alarm_state;
 }BuzzzerInstance;

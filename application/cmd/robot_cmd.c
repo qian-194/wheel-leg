@@ -2,6 +2,7 @@
 #include "robot_def.h"
 #include "robot_cmd.h"
 #include "balance.h"
+#include "buzzer/buzzer_app.h"
 // module
 #include "remote_control.h"
 #include "flysky.h"
@@ -134,6 +135,9 @@ static void RemoteControlSet()
     }
     chassis_cmd_send.leg_height_l=0.15;
     chassis_cmd_send.leg_height_r=0.15;
+    if(fs_data->switch_l2==2){
+        BuzzerAppPlay(BUZZER_APP_SOUND_SEE_YOU_AGAIN);
+    }
     // if(fs_data->switch_r1 == 1){
     //     chassis_cmd_send.leg_height_l += fs_data->rocker_l1*0.00002;
     //     chassis_cmd_send.leg_height_r += fs_data->rocker_l1*0.00002;
