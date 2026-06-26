@@ -13,37 +13,57 @@
 #include "math.h"
 
 #ifndef WBR_LQR_ENABLE_YAW_OVERLAY
-#define WBR_LQR_ENABLE_YAW_OVERLAY 0
+#define WBR_LQR_ENABLE_YAW_OVERLAY 0 /* Yaw 额外叠加补偿预留开关；当前文件无条件编译分支，改为 1 暂不改变 CalcWbrLQR 输出。 */
 #endif
 #ifndef WBR_LQR_ENABLE_PITCH_OVERLAY
-#define WBR_LQR_ENABLE_PITCH_OVERLAY 0
+#define WBR_LQR_ENABLE_PITCH_OVERLAY 0 /* Pitch 额外叠加补偿预留开关；当前文件无条件编译分支，改为 1 暂不改变 CalcWbrLQR 输出。 */
 #endif
 #ifndef WBR_LQR_ENABLE_SPLIT_OVERLAY
-#define WBR_LQR_ENABLE_SPLIT_OVERLAY 1
+#define WBR_LQR_ENABLE_SPLIT_OVERLAY 1 /* 左右侧分离叠加补偿预留开关；默认保留开启状态，但当前文件尚未读取该宏。 */
 #endif
 #ifndef WBR_LQR_ENABLE_FALL_JOINT_BOOST
-#define WBR_LQR_ENABLE_FALL_JOINT_BOOST 0
+#define WBR_LQR_ENABLE_FALL_JOINT_BOOST 0 /* 跌落/离地时关节短时加力预留开关；当前文件未实现加力逻辑，默认关闭。 */
 #endif
 
+/* 功能开关（0 = 关闭, 1 = 打开）
+ * WBR_LQR_ENABLE_YAW_OVERLAY: 在控制器中叠加/启用 yaw 维度的额外修正或可视化（默认 0）。
+ * WBR_LQR_ENABLE_PITCH_OVERLAY: 在控制器中叠加/启用 pitch 维度的额外修正或可视化（默认 0）。
+ * WBR_LQR_ENABLE_SPLIT_OVERLAY: 启用分离叠加模式，通常用于左右腿/轮子分开计算（默认 1）。
+ * WBR_LQR_ENABLE_FALL_JOINT_BOOST: 掉落/跌倒检测时对关节/髋部施加短时加力以抵抗冲击（默认 0，慎用）。
+ */
+
+/* 执行器符号（用于根据电机安装方向调整输出符号）
+ * 如果电机或减速箱安装导致输出方向与模型不一致，可将对应宏设为 -1.0f 翻转符号。
+ * WBR_LQR_LEFT_WHEEL_SIGN / WBR_LQR_RIGHT_WHEEL_SIGN: 轮子扭矩符号校正，默认 1.0f。
+ * WBR_LQR_LEFT_HIP_SIGN / WBR_LQR_RIGHT_HIP_SIGN: 虚拟髋/关节扭矩符号校正，默认 1.0f。
+ */
 #ifndef WBR_LQR_LEFT_WHEEL_SIGN
-#define WBR_LQR_LEFT_WHEEL_SIGN 1.0f
+#define WBR_LQR_LEFT_WHEEL_SIGN 1.0f /* 左轮 LQR 力矩输出符号系数；用于适配电机安装方向，1.0f 不翻转，-1.0f 翻转。 */
 #endif
 #ifndef WBR_LQR_RIGHT_WHEEL_SIGN
-#define WBR_LQR_RIGHT_WHEEL_SIGN 1.0f
+#define WBR_LQR_RIGHT_WHEEL_SIGN 1.0f /* 右轮 LQR 力矩输出符号系数；用于适配电机安装方向，1.0f 不翻转，-1.0f 翻转。 */
 #endif
 #ifndef WBR_LQR_LEFT_HIP_SIGN
-#define WBR_LQR_LEFT_HIP_SIGN 1.0f
+#define WBR_LQR_LEFT_HIP_SIGN 1.0f /* 左虚拟髋/关节力矩输出符号系数；输出方向反时改为 -1.0f。 */
 #endif
 #ifndef WBR_LQR_RIGHT_HIP_SIGN
-#define WBR_LQR_RIGHT_HIP_SIGN 1.0f
+#define WBR_LQR_RIGHT_HIP_SIGN 1.0f /* 右虚拟髋/关节力矩输出符号系数；输出方向反时改为 -1.0f。 */
 #endif
 
-#define WBR_LQR_LEG_GRID_COUNT 10u
-#define WBR_LQR_U_DIM 4u
-#define WBR_LQR_X_DIM 10u
-#define WBR_LQR_WHEEL_TORQUE_LIMIT 2.5f
-#define WBR_LQR_VIRTUAL_HIP_TORQUE_LIMIT 12.0f
-#define WBR_LQR_JOINT_TORQUE_LIMIT 12.0f
+/* 尺寸与限制说明
+ * WBR_LQR_LEG_GRID_COUNT: 预计算增益表中腿长（或相关参数）网格点数量。
+ * WBR_LQR_U_DIM: 控制输入维度（u 的大小），此处为 4（左右轮 + 左右髋/虚拟髋）。
+ * WBR_LQR_X_DIM: 状态向量维度（x 的大小），与文件头注释中的状态定义一致（此处为 10）。
+ * WBR_LQR_WHEEL_TORQUE_LIMIT: 单个轮子允许的最大扭矩（Nm），用于饱和保护，默认 2.5f。
+ * WBR_LQR_VIRTUAL_HIP_TORQUE_LIMIT: 虚拟髋/腰部最大扭矩限制（Nm），默认 12.0f。
+ * WBR_LQR_JOINT_TORQUE_LIMIT: 关节/电机最大扭矩限制（Nm），默认 12.0f。
+ */
+#define WBR_LQR_LEG_GRID_COUNT 10u /* 单侧腿长增益调度网格点数量；决定 WBR_LQR_LEG_GRID 和 K 表前两维大小。 */
+#define WBR_LQR_U_DIM 4u /* LQR 控制输入维度：左轮、右轮、左虚拟髋、右虚拟髋四个输出。 */
+#define WBR_LQR_X_DIM 10u /* LQR 状态/误差维度；对应文件头列出的 10 个状态量。 */
+#define WBR_LQR_WHEEL_TORQUE_LIMIT 2.5f /* 单个轮毂力矩限幅值，单位 N*m；预留给输出保护层做饱和保护。 */
+#define WBR_LQR_VIRTUAL_HIP_TORQUE_LIMIT 18.0f /* 虚拟髋力矩限幅值，单位 N*m；预留给虚拟髋输出保护层使用。 */
+#define WBR_LQR_JOINT_TORQUE_LIMIT 12.0f /* 实际关节/电机力矩限幅值，单位 N*m；预留给关节输出保护层使用。 */
 
 static const float WBR_LQR_Q_DIAG[WBR_LQR_X_DIM] = {
     20.0f, 2.0f, 25.0f, 2.0f, 800.0f, 20.0f, 800.0f, 20.0f, 1200.0f, 30.0f
@@ -783,7 +803,7 @@ static inline void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, f
  * 调用前必须准备：
  * - 左右腿腿长、腿角和腿角速度
  * - 底盘位移、速度、yaw、yaw 角速度、pitch、pitch 角速度
- * - 目标位移、目标速度、目标 yaw、目标 yaw 角速度
+ * - 目标位移、目标速度、目标 yaw、目标 yaw 角速度、目标 pitch
  *
  * 内部状态顺序：
  * [s, s_dot, yaw, yaw_dot, left_theta, left_theta_dot,
@@ -798,9 +818,10 @@ static inline void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, f
  * - vel_error = chassis->vel - chassis->target_v
  * - yaw_error = wrap_pi(chassis->yaw - chassis->target_yaw)
  * - yaw_dot_error = chassis->wz - chassis->target_wz
+ * - pitch_error = chassis->pitch - chassis->target_pitch
  *
- * left_theta、right_theta、pitch 及其角速度的目标值默认为 0，
- * 因此这些项直接使用当前测量值作为误差。
+ * left_theta、right_theta 及各角速度目标值默认为 0，因此这些项直接使用当前测量值作为误差。
+ * roll/roll_w 不在当前 10 维 LQR 状态内，不能直接加入 error[]；如需 roll 闭环需重算 K 表或在外层做差动腿/髋控制。
  *
  * 输出字段为未经符号映射、离地处理和限幅的原始 LQR 计算结果：
  * - left->T_wheel / right->T_wheel：左右轮毂原始力矩，单位 N*m
@@ -828,8 +849,9 @@ static void CalcWbrLQR(LinkNPodParam *left, LinkNPodParam *right, ChassisParam *
     error[4] = left->theta;
     error[5] = left->theta_w;
     error[6] = right->theta;
+    
     error[7] = right->theta_w;
-    error[8] = chassis->pitch;
+    error[8] = chassis->pitch - chassis->target_pitch;
     error[9] = chassis->pitch_w;
 
     for (uint8_t row = 0; row < WBR_LQR_U_DIM; row++)

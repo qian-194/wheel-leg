@@ -128,6 +128,8 @@ void BalanceStateReset(BalanceState *state)
     state->right.F_leg = gravity_ff;
     state->left.normal_force = 0.5f * BODY_MASS * BALANCE_GRAVITY;
     state->right.normal_force = 0.5f * BODY_MASS * BALANCE_GRAVITY;
+    state->chassis.target_pitch = BALANCE_TARGET_PITCH;
+    state->chassis.target_roll = BALANCE_TARGET_ROLL;
     state->left.fly_flag = 0u;
     state->right.fly_flag = 0u;
     InitContactSlipState(&state->left.contact_slip);
@@ -233,6 +235,8 @@ static void AssembleTargetState(LinkNPodParam *left,
 
     chassis->target_v = cmd->vx;
     chassis->target_wz = cmd->wz;
+    chassis->target_pitch = BALANCE_TARGET_PITCH;
+    chassis->target_roll = BALANCE_TARGET_ROLL;
     chassis->offset_angle = cmd->offset_angle * DEGREE_2_RAD;
 
     left->target_len = ClampFloat((cmd->leg_height_l > 0.001f) ? cmd->leg_height_l : L0_INIT,

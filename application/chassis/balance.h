@@ -36,6 +36,8 @@
 
 #define BALANCE_GRAVITY_BIAS 0       // 平衡方向重力补偿偏置,预留调参项
 #define ROLL_GRAVITY_BIAS 0          // 横滚方向重力补偿偏置,预留调参项
+#define BALANCE_TARGET_PITCH 0.0f    // 机体平衡时的目标 pitch,rad; 机械装配不水平时在这里填入静态零偏
+#define BALANCE_TARGET_ROLL 0.0f     // 机体平衡时的目标 roll,rad; 当前 WBR LQR 未包含 roll 状态,供外层 roll 控制预留
 #define BALANCE_GRAVITY 9.81f        // 重力加速度,m/s^2
 #define LEG_GRAVITY_FF_GAIN 1.0f     // 腿长支撑力重力前馈系数,1.0 表示按半车重补偿
 #define LEG_LEN_KP 500.0f            // 腿长 PD 位置增益,N/m
@@ -67,7 +69,7 @@
 #define BALANCE_SLIP_W_MIN 2.0f             // 打滑分数归一化最小轮速分母,rad/s; 防低速误判
 #define BALANCE_SLIP_LOW 0.15f              // slip_score 低阈值; 低于该值映射为 0 打滑置信度
 #define BALANCE_SLIP_HIGH 0.35f             // slip_score 高阈值; 高于该值映射为 1 打滑置信度
-#define BALANCE_SLIP_ALPHA 0.10f            // 打滑分数一阶低通系数; 越大响应越快但更抖
+#define BALANCE_SLIP_ALPHA 0.10f            // 打滑分数一阶低通 系数; 越大响应越快但更抖
 #define BALANCE_SLIP_ON_CONF 0.70f          // 打滑置位置信度阈值,配合确认时间使用
 #define BALANCE_SLIP_OFF_CONF 0.30f         // 打滑清除置信度阈值,低于该值持续一段时间后解除
 #define BALANCE_SLIP_ON_TIME 0.020f         // 打滑确认时间,s
@@ -194,6 +196,7 @@ typedef struct
     float dist, target_dist;    // 底盘位移距离
     // 转向
     float target_yaw;       // 底盘目标航向角，逆时针为+，单位：rad
+    float target_pitch;            // 底盘目标俯仰角，上翘为+，单位：rad; LQR pitch 误差使用
     float target_roll;              // 底盘目标横滚角，右倾为+，单位：rad
     float target_wz;                // 底盘目标角速度，逆时针为+，单位：rad/s
     float offset_angle;          //底盘和归中位置的夹角，底盘相对云台逆时针为+，单位：rad，范围：(-Π,Π]
