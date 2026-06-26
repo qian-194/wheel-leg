@@ -20,7 +20,7 @@
 #include "ins_task.h"
 //平衡用函数
 #include "balance.h"
-#include "wbr_lqr_calc.h"
+#include "balance_nmpc.h"
 
 #include "general_def.h"
 #include "bsp_dwt.h"
@@ -187,6 +187,11 @@ void BalanceInit()
  * 每周期读取底盘命令、计算真实周期、执行上电关节校准，并根据底盘模式选择
  * 急停、双轮开环或站立平衡控制。任务末尾会回传底盘反馈数据。
  */
+void BalanceNmpcTask(void)
+{
+    BalanceNmpcTaskUpdate(&balance_state, &chassis_cmd_recv);
+}
+
 void BalanceTask()
 {
     // 后续增加没收到消息的处理(双板的情况)
@@ -240,6 +245,7 @@ void BalanceTask()
                            &chassis_cmd_recv,
                            &motor_feedback,
                            del_t);
+        BalanceNmpcApplyTarget(&balance_state);
         BalanceControlUpdate(&balance_state, del_t);
         break;
     }

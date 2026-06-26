@@ -44,6 +44,14 @@ static const BuzzerAppNote_s error_sound[] = {
     {OCTAVE_1, BUZZER_APP_FREQ_FROM_OCTAVE, 500, 0.45f},
 };
 
+static const BuzzerAppNote_s nmpc_timeout_sound[] = {
+    {OCTAVE_4, BUZZER_APP_FREQ_FROM_OCTAVE, 70, 0.35f},
+    {OCTAVE_1, BZR_REST, 60, 0.0f},
+    {OCTAVE_4, BUZZER_APP_FREQ_FROM_OCTAVE, 70, 0.35f},
+    {OCTAVE_1, BZR_REST, 60, 0.0f},
+    {OCTAVE_4, BUZZER_APP_FREQ_FROM_OCTAVE, 70, 0.35f},
+};
+
 static const BuzzerAppNote_s see_you_again_sound[] = {
     // When I see you again: 1, 2, 3, 5, 3, 2
     {OCTAVE_1, NOTE_C4, 375, 0.30f},
@@ -128,6 +136,10 @@ void BuzzerAppPlay(BuzzerAppSound_e sound)
     case BUZZER_APP_SOUND_ERROR:
         active_sound = error_sound;
         active_sound_len = sizeof(error_sound) / sizeof(error_sound[0]);
+        break;
+    case BUZZER_APP_SOUND_NMPC_TIMEOUT:
+        active_sound = nmpc_timeout_sound;
+        active_sound_len = sizeof(nmpc_timeout_sound) / sizeof(nmpc_timeout_sound[0]);
         break;
     default:
         active_sound = NULL;

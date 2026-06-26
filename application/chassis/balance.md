@@ -64,7 +64,8 @@ error[8] = chassis->pitch - chassis->target_pitch;
 error[9] = chassis->pitch_w;
 ```
 
-`target_roll` 已保存在 `ChassisParam` 中，但当前不会进入 `wbr_lqr_calc.h` 的 10 维 K 表。若要做 roll 闭环，需要重算包含 roll 的 K 表，或在外层做左右腿/髋差动控制。
+`target_roll` 已保存在 `ChassisParam` 中，但当前不会进入 `wbr_lqr_calc.h` 的 10 维 K 表。
+若要做 roll 闭环，需要重算包含 roll 的 K 表，或在外层做左右腿/髋差动控制。
 
 ## LQR
 

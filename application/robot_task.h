@@ -7,6 +7,7 @@
 #include "cmsis_os.h"
 
 #include "robot.h"
+#include "balance.h"
 #include "ins_task.h"
 #include "motor_task.h"
 #include "referee_task.h"
@@ -20,6 +21,7 @@
 
 osThreadId insTaskHandle;
 osThreadId robotTaskHandle;
+osThreadId nmpcTaskHandle;
 osThreadId motorTaskHandle;
 osThreadId daemonTaskHandle;
 osThreadId uiTaskHandle;
@@ -28,6 +30,7 @@ void StartINSTASK(void const *argument);
 void StartMOTORTASK(void const *argument);
 void StartDAEMONTASK(void const *argument);
 void StartROBOTTASK(void const *argument);
+void StartNMPCTASK(void const *argument);
 void StartUITASK(void const *argument);
 
 /**
@@ -48,6 +51,9 @@ void OSTaskInit()
 
     osThreadDef(robottask, StartROBOTTASK, osPriorityNormal, 0, 1024);
     robotTaskHandle = osThreadCreate(osThread(robottask), NULL);
+
+    osThreadDef(nmpctask, StartNMPCTASK, osPriorityBelowNormal, 0, 512);
+    nmpcTaskHandle = osThreadCreate(osThread(nmpctask), NULL);
 
     osThreadDef(uitask, StartUITASK, osPriorityNormal, 0, 512);
     uiTaskHandle = osThreadCreate(osThread(uitask), NULL);
@@ -126,6 +132,22 @@ __attribute__((noreturn)) void StartROBOTTASK(void const *argument)
         if (robot_dt > 5)
             LOGERROR("[freeRTOS] ROBOT core Task is being DELAY! dt = [%f]", &robot_dt);
         osDelay(1);
+    }
+}
+
+__attribute__((noreturn)) void StartNMPCTASK(void const *argument)
+{
+    static float nmpc_dt;
+    static float nmpc_start;
+    LOGINFO("[freeRTOS] NMPC Task Start");
+    for (;;)
+    {
+        nmpc_start = DWT_GetTimeline_ms();
+        BalanceNmpcTask();
+        nmpc_dt = DWT_GetTimeline_ms() - nmpc_start;
+        if (nmpc_dt > 2)
+            LOGERROR("[freeRTOS] NMPC Task is being DELAY! dt = [%f]", &nmpc_dt);
+        osDelay(5);
     }
 }
 

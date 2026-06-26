@@ -290,6 +290,8 @@ void BalanceInit(void);
  */
 void BalanceTask(void);
 
+void BalanceNmpcTask(void);
+
 /**
  * @brief 停止四个关节电机和左右驱动轮电机。
  */

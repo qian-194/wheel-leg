@@ -149,6 +149,7 @@ modules/alarm/buzzer.c \
 modules/vofa/vofa.c \
 application/gimbal/gimbal.c \
 application/chassis/balance.c \
+application/chassis/balance_nmpc.c \
 application/chassis/balance_state.c \
 application/chassis/balance_control.c \
 application/shoot/shoot.c \
