@@ -420,7 +420,8 @@ static void NmpcAssembleErrorState(const BalanceState *state,
     if (fabsf(target_wz) > 0.05f) x[2] = 0.0f;
     x[3] = state->chassis.wz - target_wz;
     x[4] = state->left.theta;
-    x[5] = state->left.theta_w;+
+    x[5] = state->left.theta_w;
+    x[6] = state->right.theta;
     x[7] = state->right.theta_w;
     x[8] = state->chassis.pitch - target_pitch;
     x[9] = state->chassis.pitch_w;

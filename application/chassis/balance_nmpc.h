@@ -2,14 +2,6 @@
 
 #include "balance.h"
 
-/*
- * NMPC 只作为 200Hz 上层参考规划器使用，不直接输出电机力矩。
- * 关闭该宏后，BalanceTask 会继续使用原来的目标值和底层 LQR/VMC 控制。
- */
-#ifndef BALANCE_NMPC_ENABLE
-#define BALANCE_NMPC_ENABLE 1
-#endif
-
 /* 超过该耗时认为本周期 NMPC 不可信，外层会进入 fallback 并保留底层控制。 */
 #define BALANCE_NMPC_TIMEOUT_MS 2.0f
 /* BalanceTask 使用目标前会检查时间戳，防止 200Hz 任务卡住后继续吃旧参考。 */
