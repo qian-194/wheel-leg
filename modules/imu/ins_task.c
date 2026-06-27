@@ -20,10 +20,7 @@
 #include "general_def.h"
 #include "master_process.h"
 #include "arm_math.h"
-
-#ifndef IMU_TEMP_CTRL_ENABLE
-#define IMU_TEMP_CTRL_ENABLE 0
-#endif
+#include "balance.h"
 
 static INS_t INS;
 static IMU_Param_t IMU_Param;

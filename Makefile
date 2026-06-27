@@ -21,9 +21,6 @@ TARGET = Basic_Framework_MC02
 ######################################
 # debug build?
 DEBUG = 1
-# IMU temperature control. Keep off for debugging; enable for download/run with:
-# make IMU_TEMP_CTRL=1
-IMU_TEMP_CTRL ?= 0
 # optimization
 OPT = -Og
 
@@ -214,8 +211,7 @@ C_DEFS =  \
 -DUSE_HAL_DRIVER \
 -DSTM32H723xx \
 -DARM_MATH_CM7 \
--DDISABLE_LOG_SYSTEM \
--DIMU_TEMP_CTRL_ENABLE=$(IMU_TEMP_CTRL)
+-DDISABLE_LOG_SYSTEM 
 
 
 # AS includes
