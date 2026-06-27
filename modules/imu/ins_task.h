@@ -27,9 +27,10 @@
 
 typedef struct
 {
-    float Gyro[3];  // 角速度
-    float Accel[3]; // 加速度
-    // 还需要增加角速度数据
+    float Gyro[3];      // 角速度
+    float GyroAccel[3]; // 角加速度
+    float Accel[3];     // 加速度
+    // GyroAccel is calculated by differentiating Gyro and applying a low-pass filter.
     float Roll;
     float Pitch;
     float Yaw;
@@ -55,8 +56,9 @@ typedef struct
     // float atanyz;
 
     // IMU量测值
-    float Gyro[3];  // 角速度
-    float Accel[3]; // 加速度
+    float Gyro[3];      // 角速度
+    float GyroAccel[3]; // 角加速度
+    float Accel[3];     // 加速度
     // 位姿
     float Roll;
     float Pitch;

@@ -33,6 +33,8 @@ const float zb[3] = {0, 0, 1};
 static uint32_t INS_DWT_Count = 0;
 static float dt = 0, t = 0;
 static float RefTemp = 40; // 恒温设定温度
+static float LastGyro[3] = {0};
+static uint8_t GyroAccelInit = 0;
 
 static void IMU_Param_Correction(IMU_Param_t *param, float gyro[3], float accel[3]);
 
@@ -139,6 +141,23 @@ void INS_Task(void)
 
         // demo function,用于修正安装误差,可以不管,本demo暂时没用
         IMU_Param_Correction(&IMU_Param, INS.Gyro, INS.Accel);
+
+        if (!GyroAccelInit || dt <= 0.0f)
+        {
+            memset(INS.GyroAccel, 0, sizeof(INS.GyroAccel));
+            memcpy(LastGyro, INS.Gyro, sizeof(LastGyro));
+            GyroAccelInit = 1;
+        }
+        else
+        {
+            const float gyro_accel_lpf = 0.2f;
+            for (uint8_t i = 0; i < 3; ++i)
+            {
+                float gyro_accel_raw = (INS.Gyro[i] - LastGyro[i]) / dt;
+                INS.GyroAccel[i] += gyro_accel_lpf * (gyro_accel_raw - INS.GyroAccel[i]);
+                LastGyro[i] = INS.Gyro[i];
+            }
+        }
 
         // 计算重力加速度矢量和b系的XY两轴的夹角,可用作功能扩展,本demo暂时没用
         // INS.atanxz = -atan2f(INS.Accel[X], INS.Accel[Z]) * 180 / PI;
