@@ -64,6 +64,39 @@
 #define MAX_ACC_REF 1.2f             // 底盘最大前向加速度,m/s^2
 #define MAX_WZ_ACC_REF 3.5f          // 底盘最大角加速度,rad/s^2
 
+// 腿力分层控制与 RollTask。默认全部关闭，保证回归时 F_leg 仍等于基础腿长控制输出。
+#define BALANCE_TURN_LOAD_FF_ENABLE 0      // 转向压腿惯量前馈使能
+#define BALANCE_ROLL_TASK_ENABLE 0         // 台阶/不等腿长 roll 反馈补偿使能
+#define BALANCE_ROLL_TASK_LESO_ENABLE 0    // RollTask 专用二阶 LESO 扰动补偿使能
+#define BALANCE_CONTACT_PROTECT_ENABLE 0   // 接触/落地腿力保护使能
+#define BALANCE_TURN_LOAD_K_VWZ_FF 0.0f    // v * target_wz 转向压腿前馈增益,N/(m/s*rad/s)
+#define BALANCE_TURN_LOAD_K_WZ2_FF 0.0f    // target_wz * abs(target_wz) 转向压腿前馈增益,N/(rad/s)^2
+#define BALANCE_TURN_LOAD_K_WZDOT_FF 0.0f  // target_wz 差分前馈增益,N/(rad/s^2)
+#define BALANCE_TURN_LOAD_FF_MAX_RATIO 0.15f // 转向压腿前馈限幅,相对单腿标称支撑力
+#define BALANCE_TURN_LOAD_ALPHA 0.10f      // 转向压腿前馈一阶低通系数
+#define BALANCE_ROLL_REF_K_WZ 0.0f         // 转向 roll 参考 target_wz 增益,rad/(rad/s)
+#define BALANCE_ROLL_REF_K_VWZ 0.0f        // 转向 roll 参考 v*target_wz 增益,rad/(m/s*rad/s)
+#define BALANCE_ROLL_KP 0.0f               // roll 反馈比例增益,N/rad
+#define BALANCE_ROLL_KD 0.0f               // roll 反馈阻尼增益,N/(rad/s)
+#define BALANCE_ROLL_FB_MAX_RATIO 0.15f    // roll 反馈限幅,相对单腿标称支撑力
+#define BALANCE_ROLL_TASK_LESO_B0 1.0f     // RollTask LESO 输入增益估计,(rad/s^2)/N
+#define BALANCE_ROLL_TASK_LESO_WO 25.0f    // RollTask LESO 观测器带宽,rad/s
+#define BALANCE_ROLL_DISTURBANCE_GAIN 0.0f // RollTask LESO 扰动补偿注入系数
+#define BALANCE_ROLL_DISTURBANCE_MAX_RATIO 0.10f // RollTask 扰动补偿限幅,相对单腿标称支撑力
+#define BALANCE_ROLL_WEIGHT_BASE 1.0f      // roll 反馈基础权重
+#define BALANCE_ROLL_WEIGHT_MIN 0.0f       // roll 反馈最小权重
+#define BALANCE_ROLL_WEIGHT_MAX 1.0f       // roll 反馈最大权重
+#define BALANCE_ROLL_TERRAIN_LEG_DIFF_LOW 0.01f // 腿长/目标腿长差低阈值,m
+#define BALANCE_ROLL_TERRAIN_LEG_DIFF_HIGH 0.05f // 腿长/目标腿长差高阈值,m
+#define BALANCE_ROLL_TERRAIN_ROLL_LOW 0.03f // roll 地形权重低阈值,rad
+#define BALANCE_ROLL_TERRAIN_ROLL_HIGH 0.15f // roll 地形权重高阈值,rad
+#define BALANCE_ROLL_TERRAIN_GAIN 0.50f    // 地形权重增益
+#define BALANCE_ROLL_TURN_RELEASE_WZ 1.5f  // target_wz 达到该值附近时降低 roll 硬反馈,rad/s
+#define BALANCE_ROLL_TURN_RELEASE_MIN 0.45f // 快速转向时 roll 反馈最低释放权重
+#define BALANCE_FINAL_DELTA_F_MAX_RATIO 0.30f // 左右腿力总差动限幅,相对单腿标称支撑力
+#define BALANCE_AIRBORNE_FORCE_SCALE 0.25f // 离地侧腿力保护缩放
+#define BALANCE_LANDING_ROLL_FB_SCALE 0.30f // 落地保护期间 roll 反馈缩放
+
 // 打滑与接触/离地检测参数，首版只输出状态，不直接参与控制
 #define TWO_WHEEL_TRACK_WIDTH_M ((float)TRACK_WIDTH * 0.001f) // 左右轮距,m; TRACK_WIDTH 原单位为 mm
 #define TWO_WHEEL_HALF_TRACK_M (0.5f * TWO_WHEEL_TRACK_WIDTH_M) // 左右轮半距,m; 差速轮速预测使用
@@ -244,9 +277,30 @@ typedef struct
 
 typedef struct
 {
+    float F_base_l;        // 左腿基础腿长控制力,N
+    float F_base_r;        // 右腿基础腿长控制力,N
+    float delta_F_turn_ff; // 转向压腿前馈差动力,N; 左加右减
+    float delta_F_roll_fb; // RollTask 反馈差动力,N; 左加右减
+    float delta_F_total;   // 最终差动力,N; 左加右减
+    float roll_ref_turn;   // 转向允许的 roll 参考,rad
+    float roll_err;        // roll_ref_turn - roll,rad
+    float roll_weight;     // roll 反馈调度权重
+    float target_wz_last;  // 上周期目标 yaw 角速度,rad/s
+    float wz_dot;          // 目标 yaw 角加速度估计,rad/s^2
+    LESO2Instance roll_task_leso; // RollTask 专用二阶 LESO，估计 roll 角速度与总扰动
+    float roll_leso_angle;        // RollTask LESO 估计 roll,rad
+    float roll_leso_rate;         // RollTask LESO 估计 roll 角速度,rad/s
+    float roll_disturbance;       // RollTask LESO 估计总扰动,rad/s^2
+    float roll_disturbance_comp;  // RollTask LESO 换算后的腿力差动补偿,N
+    float delta_F_roll_fb_last;   // 上周期 RollTask 实际反馈差动力,N
+} LegRollControlState;
+
+typedef struct
+{
     LinkNPodParam left;
     LinkNPodParam right;
     ChassisParam chassis;
+    LegRollControlState roll_ctrl;
 } BalanceState;
 
 /**

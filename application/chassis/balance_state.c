@@ -166,6 +166,14 @@ void BalanceStateReset(BalanceState *state)
         .z2_init = 0.0f,
         .z3_init = 0.0f,
     };
+    LESO2_Init_Config_s roll_task_leso_config = {
+        .b0 = BALANCE_ROLL_TASK_LESO_B0,
+        .wo = BALANCE_ROLL_TASK_LESO_WO,
+        .freq = BALANCE_CONTROL_FREQ,
+        .z1_init = 0.0f,
+        .z2_init = 0.0f,
+        .z3_init = 0.0f,
+    };
     LESO1_Init_Config_s wheel_speed_leso_config = {
         .b0 = WHEEL_SPEED_LESO_B0,
         .wo = WHEEL_SPEED_LESO_WO,
@@ -176,6 +184,7 @@ void BalanceStateReset(BalanceState *state)
 
     LESO2Init(&state->chassis.pitch_leso, &pitch_leso_config);
     LESO2Init(&state->chassis.roll_leso, &roll_leso_config);
+    LESO2Init(&state->roll_ctrl.roll_task_leso, &roll_task_leso_config);
     LESO1Init(&state->left.wheel_speed_leso, &wheel_speed_leso_config);
     LESO1Init(&state->right.wheel_speed_leso, &wheel_speed_leso_config);
     state->chassis.pitch_wheel_torque_ratio = ClampFloat(PITCH_WHEEL_TORQUE_RATIO, 0.0f, 1.0f);
@@ -753,26 +762,26 @@ static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
 /**
  * @brief 填充底盘调试数组。
  *
- * 将当前关键状态按固定顺序写入 chassis->debug，便于在线观测和上位机调试。
+ * 将 RollTask 与腿力分解关键状态按固定顺序写入 chassis->debug，
+ * 便于在线观测和上位机调试。
  *
- * @param left    左腿状态。
- * @param right   右腿状态。
- * @param chassis 底盘状态。
+ * @param state 平衡状态对象。
  */
-static void FillDebugState(const LinkNPodParam *left,
-                           const LinkNPodParam *right,
-                           ChassisParam *chassis)
+static void FillDebugState(BalanceState *state)
 {
-    chassis->debug[0] = chassis->dist;
-    chassis->debug[1] = chassis->vel;
-    chassis->debug[2] = left->theta;
-    chassis->debug[3] = left->theta_w;
-    chassis->debug[4] = right->theta;
-    chassis->debug[5] = right->theta_w;
-    chassis->debug[6] = left->leg_len;
-    chassis->debug[7] = right->leg_len;
-    chassis->debug[8] = chassis->pitch;
-    chassis->debug[9] = chassis->pitch_w;
+    ChassisParam *chassis = &state->chassis;
+    const LegRollControlState *roll_ctrl = &state->roll_ctrl;
+
+    chassis->debug[0] = chassis->roll;
+    chassis->debug[1] = chassis->roll_w;
+    chassis->debug[2] = roll_ctrl->roll_ref_turn;
+    chassis->debug[3] = roll_ctrl->roll_err;
+    chassis->debug[4] = roll_ctrl->roll_weight;
+    chassis->debug[5] = roll_ctrl->F_base_l;
+    chassis->debug[6] = roll_ctrl->F_base_r;
+    chassis->debug[7] = roll_ctrl->delta_F_turn_ff;
+    chassis->debug[8] = roll_ctrl->delta_F_roll_fb;
+    chassis->debug[9] = state->left.F_leg - state->right.F_leg;
 }
 
 /**
@@ -808,5 +817,5 @@ void BalanceStateUpdate(BalanceState *state,
     UpdateWheelSpeedLesoState(&state->left, &state->right, dt);
     UpdateSlipState(&state->left, &state->right, &state->chassis, dt);
     UpdateContactState(&state->left, &state->right, dt);
-    FillDebugState(&state->left, &state->right, &state->chassis);
+    FillDebugState(state);
 }
