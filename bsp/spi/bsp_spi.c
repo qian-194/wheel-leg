@@ -169,6 +169,11 @@ void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
         if (spi_instance[i]->spi_handle == hspi && // 显然同一时间一条总线只能有一个从机在接收数据
             HAL_GPIO_ReadPin(spi_instance[i]->GPIOx, spi_instance[i]->cs_pin) == GPIO_PIN_RESET)
         {
+            if (spi_instance[i]->spi_work_mode == SPI_DMA_MODE && spi_instance[i]->rx_buffer != NULL)
+            {
+                Cache_InvalidateByAddr(spi_instance[i]->rx_buffer, spi_instance[i]->rx_size);
+            }
+
             // 先拉高片选,结束传输,在判断是否有回调函数,如果有则调用回调函数
             HAL_GPIO_WritePin(spi_instance[i]->GPIOx, spi_instance[i]->cs_pin, GPIO_PIN_SET);
             *spi_instance[i]->cs_pin_state =

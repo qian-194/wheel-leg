@@ -10,6 +10,7 @@
 
 #include "balance.h"
 #include "general_def.h"
+#include "tcm_region.h"
 #include "math.h"
 
 #ifndef WBR_LQR_ENABLE_YAW_OVERLAY
@@ -710,7 +711,7 @@ static const float WBR_LQR_K_TABLE[WBR_LQR_LEG_GRID_COUNT][WBR_LQR_LEG_GRID_COUN
  * @param max_value 上限。
  * @return 限制在 [min_value, max_value] 区间内的值。
  */
-static inline float WbrLqrClamp(float value, float min_value, float max_value)
+static ITCM_FUNC float WbrLqrClamp(float value, float min_value, float max_value)
 {
     if (value < min_value) return min_value;
     if (value > max_value) return max_value;
@@ -726,7 +727,7 @@ static inline float WbrLqrClamp(float value, float min_value, float max_value)
  * @param angle 输入角度，单位 rad。
  * @return 归一化后的角度，单位 rad。
  */
-static inline float WbrLqrWrapPi(float angle)
+static ITCM_FUNC float WbrLqrWrapPi(float angle)
 {
     while (angle > PI) angle -= 2.0f * PI;
     while (angle < -PI) angle += 2.0f * PI;
@@ -749,7 +750,7 @@ static inline float WbrLqrWrapPi(float angle)
  * @param upper 输出较大腿长对应的网格索引。
  * @param ratio 输出插值比例，范围 [0, 1]。
  */
-static inline void WbrLqrFindLegInterval(float leg_len, uint8_t *lower, uint8_t *upper, float *ratio)
+static ITCM_FUNC void WbrLqrFindLegInterval(float leg_len, uint8_t *lower, uint8_t *upper, float *ratio)
 {
     float clipped = WbrLqrClamp(leg_len, WBR_LQR_LEG_GRID[0], WBR_LQR_LEG_GRID[WBR_LQR_LEG_GRID_COUNT - 1]);
     uint8_t hi = 1;
@@ -774,7 +775,7 @@ static inline void WbrLqrFindLegInterval(float leg_len, uint8_t *lower, uint8_t 
  * @param right_leg_len 当前右腿腿长，单位 m。
  * @param out_k 输出的 4x10 LQR 增益矩阵。
  */
-static inline void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, float out_k[WBR_LQR_U_DIM][WBR_LQR_X_DIM])
+static ITCM_FUNC void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, float out_k[WBR_LQR_U_DIM][WBR_LQR_X_DIM])
 {
     uint8_t li0, li1, ri0, ri1;
     float lt, rt;
@@ -834,7 +835,7 @@ static inline void WbrLqrInterpolateK(float left_leg_len, float right_leg_len, f
  * @param right   右腿状态，提供右腿腿长、theta/theta_w，并接收右轮和右髋 LQR 输出。
  * @param chassis 底盘状态，提供位移、速度、yaw、wz、pitch、pitch_w 及对应目标值。
  */
-static void CalcWbrLQR(LinkNPodParam *left, LinkNPodParam *right, ChassisParam *chassis)
+static ITCM_FUNC void CalcWbrLQR(LinkNPodParam *left, LinkNPodParam *right, ChassisParam *chassis)
 {
     float k[WBR_LQR_U_DIM][WBR_LQR_X_DIM];
     float error[WBR_LQR_X_DIM];

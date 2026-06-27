@@ -1,4 +1,5 @@
 #include "balance.h"
+#include "tcm_region.h"
 
 #include <math.h>
 #include <string.h>
@@ -11,7 +12,7 @@
  * @param max   输出上限。
  * @return float 若 value 超出边界则返回对应边界值，否则返回 value。
  */
-static float ClampFloat(float value, float min, float max)
+static ITCM_FUNC float ClampFloat(float value, float min, float max)
 {
     if (value < min) return min;
     if (value > max) return max;
@@ -27,7 +28,7 @@ static float ClampFloat(float value, float min, float max)
  * @param x 待开方数。
  * @return float sqrt(max(x, 0))。
  */
-static float SafeSqrt(float x)
+static ITCM_FUNC float SafeSqrt(float x)
 {
     return sqrtf(x > 0.0f ? x : 0.0f);
 }
@@ -40,7 +41,7 @@ static float SafeSqrt(float x)
  * @param c 第三个输入值。
  * @return float a、b、c 中的最大值。
  */
-static float Max3Float(float a, float b, float c)
+static ITCM_FUNC float Max3Float(float a, float b, float c)
 {
     float max = (a > b) ? a : b;
     return (max > c) ? max : c;
@@ -52,7 +53,7 @@ static float Max3Float(float a, float b, float c)
  * @param value 待饱和值。
  * @return float 限幅后的归一化值。
  */
-static float SaturateFloat(float value)
+static ITCM_FUNC float SaturateFloat(float value)
 {
     return ClampFloat(value, 0.0f, 1.0f);
 }
@@ -65,7 +66,7 @@ static float SaturateFloat(float value)
  * @param alpha 滤波系数，通常位于 [0, 1]，越大响应越快。
  * @return float 新的滤波输出。
  */
-static float LowPassFloat(float last, float input, float alpha)
+static ITCM_FUNC float LowPassFloat(float last, float input, float alpha)
 {
     return last + alpha * (input - last);
 }
@@ -81,7 +82,7 @@ static float LowPassFloat(float last, float input, float alpha)
  * @param high  置信度为 1 的上边界。
  * @return float 归一化置信度。
  */
-static float MapToConfidence(float value, float low, float high)
+static ITCM_FUNC float MapToConfidence(float value, float low, float high)
 {
     if (high <= low) return 0.0f;
     return SaturateFloat((value - low) / (high - low));
@@ -202,7 +203,7 @@ void BalanceStateReset(BalanceState *state)
  * @param chassis 待写入的底盘状态。
  * @param imu     当前 IMU 姿态数据。
  */
-static void AssembleImuState(ChassisParam *chassis, const attitude_t *imu)
+static ITCM_FUNC void AssembleImuState(ChassisParam *chassis, const attitude_t *imu)
 {
     if (imu == 0) return;
 
@@ -235,10 +236,10 @@ static void AssembleImuState(ChassisParam *chassis, const attitude_t *imu)
  * @param chassis 底盘状态。
  * @param cmd     当前底盘控制命令。
  */
-static void AssembleTargetState(LinkNPodParam *left,
-                                LinkNPodParam *right,
-                                ChassisParam *chassis,
-                                const Chassis_Ctrl_Cmd_s *cmd)
+static ITCM_FUNC void AssembleTargetState(LinkNPodParam *left,
+                                          LinkNPodParam *right,
+                                          ChassisParam *chassis,
+                                          const Chassis_Ctrl_Cmd_s *cmd)
 {
     if (cmd == 0) return;
 
@@ -271,9 +272,9 @@ static void AssembleTargetState(LinkNPodParam *left,
  * @param right 右腿状态。
  * @param motor 平衡底盘相关电机反馈指针集合。
  */
-static void AssembleMotorState(LinkNPodParam *left,
-                               LinkNPodParam *right,
-                               const BalanceMotorFeedback *motor)
+static ITCM_FUNC void AssembleMotorState(LinkNPodParam *left,
+                                         LinkNPodParam *right,
+                                         const BalanceMotorFeedback *motor)
 {
     if (motor == 0) return;
     if (motor->lf == 0 || motor->lb == 0 ||
@@ -307,7 +308,7 @@ static void AssembleMotorState(LinkNPodParam *left,
  * @param p       待更新的单腿状态。
  * @param chassis 当前底盘状态，用于扣除机体 pitch 与 pitch_w。
  */
-static void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
+static ITCM_FUNC void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
 {
     float xD, yD, xB, yB, BD, A0, B0, C0, xC, yC;
 
@@ -377,10 +378,10 @@ static void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
  * @param chassis 底盘状态。
  * @param dt      本次状态更新时间，单位 s。
  */
-static void EstimateSpeed(LinkNPodParam *left,
-                          LinkNPodParam *right,
-                          ChassisParam *chassis,
-                          float dt)
+static ITCM_FUNC void EstimateSpeed(LinkNPodParam *left,
+                                    LinkNPodParam *right,
+                                    ChassisParam *chassis,
+                                    float dt)
 {
     if (dt <= 0.0f) return;
 
@@ -418,7 +419,7 @@ static void EstimateSpeed(LinkNPodParam *left,
  * @param state 单腿接触/打滑状态。
  * @param dt    本次状态更新时间，单位 s。
  */
-static void UpdateSlipFlag(LegContactSlipState *state, float dt)
+static ITCM_FUNC void UpdateSlipFlag(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
 
@@ -468,9 +469,9 @@ static void UpdateSlipFlag(LegContactSlipState *state, float dt)
  * @param predicted_wheel_w 根据底盘速度与 yaw 角速度预测的轮速。
  * @param dt                本次状态更新时间，单位 s。
  */
-static void UpdateLegSlipState(LinkNPodParam *leg,
-                               float predicted_wheel_w,
-                               float dt)
+static ITCM_FUNC void UpdateLegSlipState(LinkNPodParam *leg,
+                                         float predicted_wheel_w,
+                                         float dt)
 {
     if (leg == 0 || dt <= 0.0f) return;
 
@@ -500,10 +501,10 @@ static void UpdateLegSlipState(LinkNPodParam *leg,
  * @param chassis 底盘状态。
  * @param dt      本次状态更新时间，单位 s。
  */
-static void UpdateSlipState(LinkNPodParam *left,
-                            LinkNPodParam *right,
-                            const ChassisParam *chassis,
-                            float dt)
+static ITCM_FUNC void UpdateSlipState(LinkNPodParam *left,
+                                      LinkNPodParam *right,
+                                      const ChassisParam *chassis,
+                                      float dt)
 {
     if (left == 0 || right == 0 || chassis == 0 || dt <= 0.0f) return;
 
@@ -522,7 +523,7 @@ static void UpdateSlipState(LinkNPodParam *left,
  * @param state 单腿接触/打滑状态。
  * @param dt    本次状态更新时间，单位 s。
  */
-static void UpdateContactFlag(LegContactSlipState *state, float dt)
+static ITCM_FUNC void UpdateContactFlag(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
 
@@ -571,7 +572,7 @@ static void UpdateContactFlag(LegContactSlipState *state, float dt)
  * @param state 单腿接触/打滑状态。
  * @param dt    本次状态更新时间，单位 s。
  */
-static void UpdateContactStateMachine(LegContactSlipState *state, float dt)
+static ITCM_FUNC void UpdateContactStateMachine(LegContactSlipState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
 
@@ -638,7 +639,7 @@ static void UpdateContactStateMachine(LegContactSlipState *state, float dt)
  * @param nominal_force 标称单腿支撑力，用于归一化接触置信度。
  * @param dt            本次状态更新时间，单位 s。
  */
-static void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float dt)
+static ITCM_FUNC void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float dt)
 {
     if (leg == 0 || dt <= 0.0f) return;
 
@@ -670,9 +671,9 @@ static void UpdateLegContactState(LinkNPodParam *leg, float nominal_force, float
  * @param right 右腿状态。
  * @param dt    本次状态更新时间，单位 s。
  */
-static void UpdateContactState(LinkNPodParam *left,
-                               LinkNPodParam *right,
-                               float dt)
+static ITCM_FUNC void UpdateContactState(LinkNPodParam *left,
+                                         LinkNPodParam *right,
+                                         float dt)
 {
     if (left == 0 || right == 0 || dt <= 0.0f) return;
 
@@ -691,7 +692,7 @@ static void UpdateContactState(LinkNPodParam *left,
  * @param state 平衡状态对象。
  * @param dt    本次状态更新时间，单位 s；此处主要作为回路有效性门控。
  */
-static void UpdateAttitudeLesoState(BalanceState *state, float dt)
+static ITCM_FUNC void UpdateAttitudeLesoState(BalanceState *state, float dt)
 {
     if (state == 0 || dt <= 0.0f) return;
 
@@ -736,9 +737,9 @@ static void UpdateAttitudeLesoState(BalanceState *state, float dt)
  * @param right 右腿状态。
  * @param dt    本次状态更新时间，单位 s；此处主要作为回路有效性门控。
  */
-static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
-                                      LinkNPodParam *right,
-                                      float dt)
+static ITCM_FUNC void UpdateWheelSpeedLesoState(LinkNPodParam *left,
+                                                LinkNPodParam *right,
+                                                float dt)
 {
     if (left == 0 || right == 0 || dt <= 0.0f) return;
 
@@ -767,7 +768,7 @@ static void UpdateWheelSpeedLesoState(LinkNPodParam *left,
  *
  * @param state 平衡状态对象。
  */
-static void FillDebugState(BalanceState *state)
+static ITCM_FUNC void FillDebugState(BalanceState *state)
 {
     ChassisParam *chassis = &state->chassis;
     const LegRollControlState *roll_ctrl = &state->roll_ctrl;
@@ -797,11 +798,11 @@ static void FillDebugState(BalanceState *state)
  * @param motor 当前电机反馈集合。
  * @param dt    本次状态更新时间，单位 s。
  */
-void BalanceStateUpdate(BalanceState *state,
-                        const attitude_t *imu,
-                        const Chassis_Ctrl_Cmd_s *cmd,
-                        const BalanceMotorFeedback *motor,
-                        float dt)
+ITCM_FUNC void BalanceStateUpdate(BalanceState *state,
+                                  const attitude_t *imu,
+                                  const Chassis_Ctrl_Cmd_s *cmd,
+                                  const BalanceMotorFeedback *motor,
+                                  float dt)
 {
     if (state == 0) return;
 

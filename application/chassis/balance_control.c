@@ -1,4 +1,5 @@
 #include "balance.h"
+#include "tcm_region.h"
 
 #include <math.h>
 
@@ -10,7 +11,7 @@
  * @param max   输出上限。
  * @return float 若 value 超出边界则返回对应边界值，否则返回 value。
  */
-static float ClampFloat(float value, float min, float max)
+static ITCM_FUNC float ClampFloat(float value, float min, float max)
 {
     if (value < min) return min;
     if (value > max) return max;
@@ -23,7 +24,7 @@ static float ClampFloat(float value, float min, float max)
  * @param value 待饱和值。
  * @return float 限幅后的归一化值。
  */
-static float SaturateFloat(float value)
+static ITCM_FUNC float SaturateFloat(float value)
 {
     return ClampFloat(value, 0.0f, 1.0f);
 }
@@ -37,7 +38,7 @@ static float SaturateFloat(float value)
  * @param alpha 滤波系数。
  * @return float 新的滤波输出。
  */
-static float LowPassFloat(float last, float input, float alpha)
+static ITCM_FUNC float LowPassFloat(float last, float input, float alpha)
 {
     return last + alpha * (input - last);
 }
@@ -51,7 +52,7 @@ static float LowPassFloat(float last, float input, float alpha)
  * @param high  输出 1 的上边界。
  * @return float 映射后的归一化值。
  */
-static float MapToUnit(float value, float low, float high)
+static ITCM_FUNC float MapToUnit(float value, float low, float high)
 {
     if (high <= low) return 0.0f;
     return SaturateFloat((value - low) / (high - low));
@@ -62,7 +63,7 @@ static float MapToUnit(float value, float low, float high)
  *
  * @return float 单腿半车重支撑力,N。
  */
-static float NominalLegForce(void)
+static ITCM_FUNC float NominalLegForce(void)
 {
     return 0.5f * BODY_MASS * BALANCE_GRAVITY;
 }
@@ -76,7 +77,7 @@ static float NominalLegForce(void)
  * @param min_abs 最小绝对值。
  * @return float 远离 0 后的值。
  */
-static float KeepAwayFromZero(float value, float min_abs)
+static ITCM_FUNC float KeepAwayFromZero(float value, float min_abs)
 {
     if (value >= 0.0f && value < min_abs) return min_abs;
     if (value < 0.0f && value > -min_abs) return -min_abs;
@@ -91,7 +92,7 @@ static float KeepAwayFromZero(float value, float min_abs)
  *
  * @param state 平衡状态对象。
  */
-static void ApplyLegForceFeedforward(BalanceState *state)
+static ITCM_FUNC void ApplyLegForceFeedforward(BalanceState *state)
 {
     const float base_force = 0.5f * BODY_MASS * BALANCE_GRAVITY * LEG_GRAVITY_FF_GAIN;
 
@@ -111,7 +112,7 @@ static void ApplyLegForceFeedforward(BalanceState *state)
  * @param dt  本次控制周期，单位 s；当前用于回路有效性门控。
  * @return float 需要叠加到腿长 PD 输出上的扰动补偿力，单位 N。
  */
-static float CalcLegLengthDisturbanceCompensation(LinkNPodParam *leg, float dt)
+static ITCM_FUNC float CalcLegLengthDisturbanceCompensation(LinkNPodParam *leg, float dt)
 {
 #if LEG_LEN_ADRC_ENABLE
     if (leg == 0 || dt <= 0.0f || LEG_LEN_ADRC_B0 <= 0.0f)
@@ -148,7 +149,7 @@ static float CalcLegLengthDisturbanceCompensation(LinkNPodParam *leg, float dt)
  * @param dt  本次控制周期，单位 s。
  * @return float 单腿腿向支撑力，单位 N。
  */
-static float CalcLegLengthBaseForce(LinkNPodParam *leg, float dt)
+static ITCM_FUNC float CalcLegLengthBaseForce(LinkNPodParam *leg, float dt)
 {
     const float gravity_ff = 0.5f * BODY_MASS * BALANCE_GRAVITY * LEG_GRAVITY_FF_GAIN;
     const float len_error = leg->target_len - leg->leg_len;
@@ -169,7 +170,7 @@ static float CalcLegLengthBaseForce(LinkNPodParam *leg, float dt)
  * @param state 平衡状态对象。
  * @param dt    本次控制周期，单位 s。
  */
-static void ApplyLegLengthBaseControl(BalanceState *state, float dt)
+static ITCM_FUNC void ApplyLegLengthBaseControl(BalanceState *state, float dt)
 {
     state->roll_ctrl.F_base_l = CalcLegLengthBaseForce(&state->left, dt);
     state->roll_ctrl.F_base_r = CalcLegLengthBaseForce(&state->right, dt);
@@ -188,7 +189,7 @@ static void ApplyLegLengthBaseControl(BalanceState *state, float dt)
  * @param state 平衡状态对象。
  * @param dt    本次控制周期，单位 s。
  */
-static void ApplyTurnLoadFeedforward(BalanceState *state, float dt)
+static ITCM_FUNC void ApplyTurnLoadFeedforward(BalanceState *state, float dt)
 {
     LegRollControlState *ctrl = &state->roll_ctrl;
     const float target_wz = state->chassis.target_wz;
@@ -224,7 +225,7 @@ static void ApplyTurnLoadFeedforward(BalanceState *state, float dt)
  * @param state 平衡状态对象。
  * @return float roll 反馈权重。
  */
-static float CalcRollTaskWeight(const BalanceState *state)
+static ITCM_FUNC float CalcRollTaskWeight(const BalanceState *state)
 {
     const float leg_diff = fabsf(state->left.leg_len - state->right.leg_len);
     const float target_diff = fabsf(state->left.target_len - state->right.target_len);
@@ -264,7 +265,7 @@ static float CalcRollTaskWeight(const BalanceState *state)
  * @param state 平衡状态对象。
  * @return float roll 反馈使用的角速度,rad/s。
  */
-static float UpdateRollTaskLeso(BalanceState *state)
+static ITCM_FUNC float UpdateRollTaskLeso(BalanceState *state)
 {
     LegRollControlState *ctrl = &state->roll_ctrl;
     float roll_rate_feedback = state->chassis.roll_w;
@@ -307,7 +308,7 @@ static float UpdateRollTaskLeso(BalanceState *state)
  *
  * @param state 平衡状态对象。
  */
-static void ApplyRollTaskFeedback(BalanceState *state)
+static ITCM_FUNC void ApplyRollTaskFeedback(BalanceState *state)
 {
     LegRollControlState *ctrl = &state->roll_ctrl;
     const float roll_rate_feedback = UpdateRollTaskLeso(state);
@@ -348,7 +349,7 @@ static void ApplyRollTaskFeedback(BalanceState *state)
  *
  * @param state 平衡状态对象。
  */
-static void ApplyContactLandingProtection(BalanceState *state)
+static ITCM_FUNC void ApplyContactLandingProtection(BalanceState *state)
 {
     LegRollControlState *ctrl = &state->roll_ctrl;
     const float nominal_force = NominalLegForce();
@@ -384,7 +385,7 @@ static void ApplyContactLandingProtection(BalanceState *state)
  *
  * @param leg 待投影的单腿状态。
  */
-static void VMCProject(LinkNPodParam *leg)
+static ITCM_FUNC void VMCProject(LinkNPodParam *leg)
 {
     const float phi12 = leg->phi1 - leg->phi2;
     const float phi34 = leg->phi3 - leg->phi4;
@@ -413,7 +414,7 @@ static void VMCProject(LinkNPodParam *leg)
  * @param state 平衡状态对象。
  * @param dt    本次控制周期，单位 s。
  */
-void BalanceControlUpdate(BalanceState *state, float dt)
+ITCM_FUNC void BalanceControlUpdate(BalanceState *state, float dt)
 {
     if (state == 0) return;
 

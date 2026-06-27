@@ -2,6 +2,7 @@
 
 #include "buzzer/buzzer_app.h"
 #include "bsp_dwt.h"
+#include "tcm_region.h"
 #include "wbr_lqr_calc.h"
 
 #include <math.h>
@@ -31,9 +32,9 @@ typedef struct
 static BalanceNmpcPlannerState planner_state;
 
 /* 大矩阵放在静态区，避免 512-word NMPC task 栈被模型预测占满。 */
-static float nmpc_a_mat[WBR_LQR_X_DIM][WBR_LQR_X_DIM];
-static float nmpc_b_mat[WBR_LQR_X_DIM][WBR_LQR_U_DIM];
-static float nmpc_k_mat[WBR_LQR_U_DIM][WBR_LQR_X_DIM];
+static DTCM_BSS float nmpc_a_mat[WBR_LQR_X_DIM][WBR_LQR_X_DIM];
+static DTCM_BSS float nmpc_b_mat[WBR_LQR_X_DIM][WBR_LQR_U_DIM];
+static DTCM_BSS float nmpc_k_mat[WBR_LQR_U_DIM][WBR_LQR_X_DIM];
 
 typedef struct
 {
