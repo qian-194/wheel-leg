@@ -13,4 +13,9 @@ void ShootInit();
  */
 void ShootTask();
 
+/**
+ * @brief Stop all shoot motors.
+ */
+void ShootStopAll(void);
+
 #endif // SHOOT_H

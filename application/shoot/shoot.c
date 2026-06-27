@@ -104,6 +104,25 @@ void ShootInit()
     shoot_sub = SubRegister("shoot_cmd", sizeof(Shoot_Ctrl_Cmd_s));
 }
 
+void ShootStopAll(void)
+{
+    if (friction_l != 0)
+    {
+        DJIMotorSetRef(friction_l, 0.0f);
+        DJIMotorStop(friction_l);
+    }
+    if (friction_r != 0)
+    {
+        DJIMotorSetRef(friction_r, 0.0f);
+        DJIMotorStop(friction_r);
+    }
+    if (loader != 0)
+    {
+        DJIMotorSetRef(loader, 0.0f);
+        DJIMotorStop(loader);
+    }
+}
+
 /* 机器人发射机构控制核心任务 */
 void ShootTask()
 {

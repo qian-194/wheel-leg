@@ -21,9 +21,15 @@
 #include "master_process.h"
 #include "arm_math.h"
 
+#ifndef IMU_TEMP_CTRL_ENABLE
+#define IMU_TEMP_CTRL_ENABLE 0
+#endif
+
 static INS_t INS;
 static IMU_Param_t IMU_Param;
+#if IMU_TEMP_CTRL_ENABLE
 static PIDInstance TempCtrl = {0};
+#endif
 
 const float xb[3] = {1, 0, 0};
 const float yb[3] = {0, 1, 0};
@@ -32,12 +38,17 @@ const float zb[3] = {0, 0, 1};
 // 用于获取两次采样之间的时间间隔
 static uint32_t INS_DWT_Count = 0;
 static float dt = 0, t = 0;
+#if IMU_TEMP_CTRL_ENABLE
 static float RefTemp = 40; // 恒温设定温度
+#endif
 static float LastGyro[3] = {0};
 static uint8_t GyroAccelInit = 0;
+static uint8_t INS_Offline = 0;
+static INS_Offline_Callback_t INS_OfflineCallback = 0;
 
 static void IMU_Param_Correction(IMU_Param_t *param, float gyro[3], float accel[3]);
 
+#if IMU_TEMP_CTRL_ENABLE
 static void IMUPWMSet(uint16_t pwm)
 {
     __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_4, pwm);
@@ -51,6 +62,31 @@ static void IMU_Temperature_Ctrl(void)
 {
     PIDCalculate(&TempCtrl, BMI088.Temperature, RefTemp);
     IMUPWMSet(float_constrain(float_rounding(TempCtrl.Output), 0, UINT32_MAX));
+}
+#endif
+
+void INS_RegisterOfflineCallback(INS_Offline_Callback_t callback)
+{
+    INS_OfflineCallback = callback;
+}
+
+uint8_t INS_IsOffline(void)
+{
+    return INS_Offline;
+}
+
+static void INS_CheckOffline(float delta_time)
+{
+    if (INS_Offline || delta_time <= 0.002f)
+    {
+        return;
+    }
+
+    INS_Offline = 1;
+    if (INS_OfflineCallback != 0)
+    {
+        INS_OfflineCallback();
+    }
 }
 
 // 使用加速度计的数据初始化Roll和Pitch,而Yaw置0,这样可以避免在初始时候的姿态估计误差
@@ -87,7 +123,9 @@ attitude_t *INS_Init(void)
     else
         return (attitude_t *)&INS.Gyro;
 
+#if IMU_TEMP_CTRL_ENABLE
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+#endif
 
     while (BMI088Init(&hspi2, 1) != BMI088_NO_ERROR)
         ;
@@ -103,6 +141,7 @@ attitude_t *INS_Init(void)
     InitQuaternion(init_quaternion);
     IMU_QuaternionEKF_Init(init_quaternion, 10, 0.001, 1000000, 1, 0);
     // imu heat init
+#if IMU_TEMP_CTRL_ENABLE
     PID_Init_Config_s config = {.MaxOut = 800,
                                 .IntegralLimit = 80,
                                 .DeadBand = 0,
@@ -111,6 +150,7 @@ attitude_t *INS_Init(void)
                                 .Kd = 0,
                                 .Improve = 0x01}; // enable integratiaon limit
     PIDInit(&TempCtrl, &config);
+#endif
 
     // noise of accel is relatively big and of high freq,thus lpf is used
     INS.AccelLPF = 0.0085;
@@ -126,6 +166,12 @@ void INS_Task(void)
 
     dt = DWT_GetDeltaT(&INS_DWT_Count);
     t += dt;
+    INS_CheckOffline(dt);
+    if (INS_Offline)
+    {
+        count++;
+        return;
+    }
 
     // ins update
     if ((count % 1) == 0)
@@ -193,8 +239,10 @@ void INS_Task(void)
     // temperature control
     if ((count % 2) == 0)
     {
+#if IMU_TEMP_CTRL_ENABLE
         // 500hz
-        //IMU_Temperature_Ctrl();
+        IMU_Temperature_Ctrl();
+#endif
     }
 
     if ((count++ % 1000) == 0)

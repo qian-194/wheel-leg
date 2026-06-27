@@ -25,6 +25,8 @@
 
 #define INS_TASK_PERIOD 1
 
+typedef void (*INS_Offline_Callback_t)(void);
+
 typedef struct
 {
     float Gyro[3];      // 角速度
@@ -92,6 +94,16 @@ attitude_t *INS_Init(void);
  *
  */
 void INS_Task(void);
+
+/**
+ * @brief Register a callback that is called once when INS update timeout is detected.
+ */
+void INS_RegisterOfflineCallback(INS_Offline_Callback_t callback);
+
+/**
+ * @brief Return 1 when INS has latched an offline/update-timeout state.
+ */
+uint8_t INS_IsOffline(void);
 
 /**
  * @brief 四元数更新函数,即实现dq/dt=0.5Ωq

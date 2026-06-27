@@ -9,6 +9,7 @@
 #define NOTE_D4 294U
 #define NOTE_E4 330U
 #define NOTE_G4 392U
+#define NOTE_HIGH_LONG 3000U
 
 typedef struct
 {
@@ -66,6 +67,7 @@ static const BuzzerAppNote_s *active_sound;
 static uint8_t active_sound_len;
 static uint8_t active_note_idx;
 static uint16_t active_note_elapsed_ms;
+static uint8_t high_long_latched;
 
 static void BuzzerAppStopSound(void)
 {
@@ -111,10 +113,21 @@ void BuzzerAppInit(void)
     active_sound_len = 0;
     active_note_idx = 0;
     active_note_elapsed_ms = 0;
+
+    if (high_long_latched)
+    {
+        static const BuzzerAppNote_s high_long_note = {OCTAVE_1, NOTE_HIGH_LONG, 0, 0.45f};
+        BuzzerAppApplyNote(&high_long_note);
+    }
 }
 
 void BuzzerAppPlay(BuzzerAppSound_e sound)
 {
+    if (high_long_latched && sound != BUZZER_APP_SOUND_HIGH_LONG)
+    {
+        return;
+    }
+
     switch (sound)
     {
     case BUZZER_APP_SOUND_STARTUP:
@@ -141,6 +154,17 @@ void BuzzerAppPlay(BuzzerAppSound_e sound)
         active_sound = nmpc_timeout_sound;
         active_sound_len = sizeof(nmpc_timeout_sound) / sizeof(nmpc_timeout_sound[0]);
         break;
+    case BUZZER_APP_SOUND_HIGH_LONG:
+        high_long_latched = 1;
+        active_sound = NULL;
+        active_sound_len = 0;
+        active_note_idx = 0;
+        active_note_elapsed_ms = 0;
+        {
+            static const BuzzerAppNote_s high_long_note = {OCTAVE_1, NOTE_HIGH_LONG, 0, 0.45f};
+            BuzzerAppApplyNote(&high_long_note);
+        }
+        return;
     default:
         active_sound = NULL;
         active_sound_len = 0;

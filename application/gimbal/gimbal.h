@@ -13,4 +13,9 @@ void GimbalInit();
  */
 void GimbalTask();
 
+/**
+ * @brief Stop all gimbal motors.
+ */
+void GimbalStopAll(void);
+
 #endif // GIMBAL_H

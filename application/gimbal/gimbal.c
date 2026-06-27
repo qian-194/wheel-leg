@@ -96,6 +96,20 @@ void GimbalInit()
     gimbal_sub = SubRegister("gimbal_cmd", sizeof(Gimbal_Ctrl_Cmd_s));
 }
 
+void GimbalStopAll(void)
+{
+    if (yaw_motor != 0)
+    {
+        DJIMotorSetRef(yaw_motor, 0.0f);
+        DJIMotorStop(yaw_motor);
+    }
+    if (pitch_motor != 0)
+    {
+        DJIMotorSetRef(pitch_motor, 0.0f);
+        DJIMotorStop(pitch_motor);
+    }
+}
+
 /* 机器人云台控制核心任务,后续考虑只保留IMU控制,不再需要电机的反馈 */
 void GimbalTask()
 {

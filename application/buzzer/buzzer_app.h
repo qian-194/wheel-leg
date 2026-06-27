@@ -9,6 +9,7 @@ typedef enum
     BUZZER_APP_SOUND_ERROR,
     BUZZER_APP_SOUND_NMPC_TIMEOUT,
     BUZZER_APP_SOUND_SEE_YOU_AGAIN,
+    BUZZER_APP_SOUND_HIGH_LONG,
 } BuzzerAppSound_e;
 
 void BuzzerAppInit(void);

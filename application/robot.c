@@ -2,6 +2,8 @@
 #include "robot.h"
 #include "robot_def.h"
 #include "robot_task.h"
+#include "ins_task.h"
+#include "buzzer/buzzer_app.h"
 
 // 编译warning,提醒开发者修改机器人参数
 #ifndef ROBOT_DEF_PARAM_WARNING
@@ -18,6 +20,20 @@
 #include "shoot.h"
 #include "robot_cmd.h"
 #endif
+
+static void RobotINSOfflineCallback(void)
+{
+#if defined(ONE_BOARD) || defined(CHASSIS_BOARD)
+    BalanceMotorStopAll();
+#endif
+
+#if defined(ONE_BOARD) || defined(GIMBAL_BOARD)
+    GimbalStopAll();
+    ShootStopAll();
+#endif
+
+    BuzzerAppPlay(BUZZER_APP_SOUND_HIGH_LONG);
+}
 
 
 void RobotInit()
@@ -39,6 +55,8 @@ void RobotInit()
     BalanceInit();
 #endif
 
+    INS_RegisterOfflineCallback(RobotINSOfflineCallback);
+
     OSTaskInit(); // 创建基础任务
 
     // 初始化完成,开启中断
@@ -47,6 +65,12 @@ void RobotInit()
 
 void RobotTask()
 {
+    if (INS_IsOffline())
+    {
+        RobotINSOfflineCallback();
+        return;
+    }
+
 #if defined(ONE_BOARD) || defined(GIMBAL_BOARD)
     RobotCMDTask();
     GimbalTask();
