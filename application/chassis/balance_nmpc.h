@@ -2,29 +2,6 @@
 
 #include "balance.h"
 
-/* 超过该耗时认为本周期 NMPC 不可信，外层会进入 fallback 并保留底层控制。 */
-#define BALANCE_NMPC_TIMEOUT_MS 2.0f
-/* BalanceTask 使用目标前会检查时间戳，防止 200Hz 任务卡住后继续吃旧参考。 */
-#define BALANCE_NMPC_TARGET_STALE_MS 15.0f
-#define BALANCE_NMPC_MAX_FAIL_COUNT 3u
-
-/* 上层参考限幅。底层 LQR/VMC 仍会做自己的力矩/关节保护。 */
-#define BALANCE_NMPC_V_LIMIT 3.0f
-#define BALANCE_NMPC_WZ_LIMIT 6.0f
-#define BALANCE_NMPC_PITCH_LIMIT 0.25f
-#define BALANCE_NMPC_ROLL_LIMIT 0.20f
-
-/* 200Hz NMPC 步长，预测域 8 步约等于 40ms。 */
-#define BALANCE_NMPC_DT 0.005f
-#define BALANCE_NMPC_HORIZON 8u
-
-/* 参考变化率限制，避免上层目标阶跃把底层 LQR 推到饱和。 */
-#define BALANCE_NMPC_V_RATE_LIMIT 1.2f
-#define BALANCE_NMPC_WZ_RATE_LIMIT 3.5f
-#define BALANCE_NMPC_LEG_RATE_LIMIT 0.45f
-#define BALANCE_NMPC_PITCH_FROM_V_GAIN 0.035f
-#define BALANCE_NMPC_PITCH_RATE_LIMIT 0.60f
-
 typedef enum
 {
     BALANCE_NMPC_DISABLED = 0,

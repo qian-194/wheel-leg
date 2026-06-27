@@ -46,6 +46,27 @@
 #define LEG_VMC_SIN_MIN 0.05f        // VMC 雅可比分母 sin 最小绝对值,防止奇异点除数过小
 #define BALANCE_CONTROL_FREQ 1000.0f  // 平衡控制回路标称频率,Hz; LESO/ADRC 和运动学预测据此派生内部步长 dt=1/freq
 #define BALANCE_NMPC_ENABLE 1        // 上层 NMPC 参考规划使能; 0 时只使用原底层 LQR/VMC 目标
+// NMPC 上层参考规划参数，集中放在 balance.h 便于统一调参。
+#define BALANCE_NMPC_TIMEOUT_MS 2.0f       // NMPC 单周期求解预算,ms; 不等于 200Hz 任务周期
+#define BALANCE_NMPC_TARGET_STALE_MS 15.0f // BalanceTask 使用目标前检查时间戳,防止继续吃旧参考,ms
+#define BALANCE_NMPC_MAX_FAIL_COUNT 3u     // 连续超时/无效解达到该次数后进入 fallback
+#define BALANCE_NMPC_V_LIMIT 3.0f          // NMPC 上层目标线速度限幅,m/s
+#define BALANCE_NMPC_WZ_LIMIT 6.0f         // NMPC 上层目标角速度限幅,rad/s
+#define BALANCE_NMPC_PITCH_LIMIT 0.25f     // NMPC 目标 pitch 限幅,rad
+#define BALANCE_NMPC_ROLL_LIMIT 0.20f      // NMPC 目标 roll 限幅,rad
+#define BALANCE_NMPC_DT 0.005f             // 200Hz NMPC 步长,s
+#define BALANCE_NMPC_HORIZON 8u            // NMPC 预测步数; 8 步约 40ms
+#define BALANCE_NMPC_V_RATE_LIMIT 1.2f     // NMPC 参考线速度变化率限幅,m/s^2
+#define BALANCE_NMPC_WZ_RATE_LIMIT 3.5f    // NMPC 参考角速度变化率限幅,rad/s^2
+#define BALANCE_NMPC_LEG_RATE_LIMIT 0.45f  // NMPC 目标腿长变化率限幅,m/s
+#define BALANCE_NMPC_PITCH_FROM_V_GAIN 0.035f // 根据目标线速度生成 pitch 前馈的增益,rad/(m/s)
+#define BALANCE_NMPC_PITCH_RATE_LIMIT 0.60f // NMPC 目标 pitch 变化率限幅,rad/s
+#define BALANCE_NMPC_LEG_MASS 2.292f       // NMPC 模型单侧腿等效质量,kg
+#define BALANCE_NMPC_WHEEL_INERTIA 0.0025f // NMPC 模型单侧驱动轮转动惯量,kg*m^2
+#define BALANCE_NMPC_BODY_INERTIA_PITCH 0.207300f // NMPC 模型机体 pitch 转动惯量,kg*m^2
+#define BALANCE_NMPC_BODY_INERTIA_YAW 0.4931f // NMPC 模型机体 yaw 转动惯量,kg*m^2
+#define BALANCE_NMPC_BODY_COM_OFFSET_X 0.00497f // NMPC 模型机体质心相对轮轴前后偏置,m
+#define BALANCE_NMPC_LEG_INERTIA_WIDTH 0.05f // NMPC 腿部等效惯量宽度项,m
 #define IMU_TEMP_CTRL_ENABLE 0       // IMU 恒温控制使能; 0 为 debug 关温控,1 为 download/run 开温控
 #define LEG_LEN_ADRC_ENABLE 0        // 腿长 ADRC 扰动补偿使能; 0 为纯 PD+重力前馈
 #define LEG_LEN_ADRC_B0 (2.0f / BODY_MASS) // 腿长对象输入增益估计,(m/s^2)/N; 近似按半车质量估计
@@ -61,8 +82,8 @@
 #define WHEEL_SPEED_LESO_B0 1.0f       // 轮速一阶 LESO 输入增益估计; 输入为上一周期轮端力矩
 #define WHEEL_SPEED_LESO_WO 35.0f      // 轮速一阶 LESO 观测器带宽,rad/s
 #define PITCH_WHEEL_TORQUE_RATIO 0.60f // pitch 控制量分配到轮力矩的比例,剩余部分预留给髋/关节力矩
-#define MAX_ACC_REF 1.2f             // 底盘最大前向加速度,m/s^2
-#define MAX_WZ_ACC_REF 3.5f          // 底盘最大角加速度,rad/s^2
+#define MAX_ACC_REF BALANCE_NMPC_V_RATE_LIMIT     // 兼容旧命名: 底盘最大前向加速度,m/s^2
+#define MAX_WZ_ACC_REF BALANCE_NMPC_WZ_RATE_LIMIT // 兼容旧命名: 底盘最大角加速度,rad/s^2
 
 // 腿力分层控制与 RollTask。默认全部关闭，保证回归时 F_leg 仍等于基础腿长控制输出。
 #define BALANCE_TURN_LOAD_FF_ENABLE 0      // 转向压腿惯量前馈使能
@@ -123,6 +144,12 @@
 // 驱动轮质量
 #define WHEEL_RADIUS 0.06775f         // 轮子半径
 #define WHEEL_MASS (0.718f)
+
+// NMPC 模型中复用的底盘物理参数别名，保证模型和底层配置从 balance.h 同源。
+#define BALANCE_NMPC_WHEEL_MASS WHEEL_MASS
+#define BALANCE_NMPC_BODY_MASS BODY_MASS
+#define BALANCE_NMPC_WHEEL_RADIUS WHEEL_RADIUS
+#define BALANCE_NMPC_HALF_TRACK TWO_WHEEL_HALF_TRACK_M
 
 // IMU距离机体质心的距离
 #define CENTER_IMU_X 0.0f      // IMU到机体质心的前后方向距离,正值表示IMU在前侧

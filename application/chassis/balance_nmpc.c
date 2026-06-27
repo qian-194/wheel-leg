@@ -7,8 +7,11 @@
 #include <math.h>
 #include <string.h>
 
-/* 200Hz NMPC 任务写入 target，BalanceTask 在底层控制前读取并应用。 */
-static volatile BalanceNmpcTarget nmpc_target;
+/* 200Hz NMPC 任务写入双缓冲 target，BalanceTask 读取时用序号校验避免半更新。 */
+static volatile BalanceNmpcTarget nmpc_target_buffer[2];
+static volatile uint8_t nmpc_target_write_index;
+static volatile uint8_t nmpc_target_read_index;
+static volatile uint32_t nmpc_target_seq;
 static volatile BalanceNmpcStatus nmpc_status = {
     .mode = BALANCE_NMPC_DISABLED,
 };
@@ -48,16 +51,16 @@ typedef struct
 } NmpcRobotParams;
 
 static const NmpcRobotParams nmpc_params = {
-    .m_w = 1.0593f,
-    .m_l = 2.292f,
-    .m_b = 11.976f,
-    .i_w = 0.0025f,
-    .i_b = 0.207300f,
-    .i_z = 0.4931f,
-    .r_w = 0.06775f,
-    .r_l = 0.24f,
-    .l_c = 0.00497f,
-    .leg_inertia_width = 0.05f,
+    .m_w = BALANCE_NMPC_WHEEL_MASS,
+    .m_l = BALANCE_NMPC_LEG_MASS,
+    .m_b = BALANCE_NMPC_BODY_MASS,
+    .i_w = BALANCE_NMPC_WHEEL_INERTIA,
+    .i_b = BALANCE_NMPC_BODY_INERTIA_PITCH,
+    .i_z = BALANCE_NMPC_BODY_INERTIA_YAW,
+    .r_w = BALANCE_NMPC_WHEEL_RADIUS,
+    .r_l = BALANCE_NMPC_HALF_TRACK,
+    .l_c = BALANCE_NMPC_BODY_COM_OFFSET_X,
+    .leg_inertia_width = BALANCE_NMPC_LEG_INERTIA_WIDTH,
 };
 
 typedef struct
@@ -130,6 +133,97 @@ static float NmpcWrapPi(float angle)
 }
 
 /**
+ * @brief 将普通 target 拷贝到 volatile 发布缓冲。
+ *
+ * @param dst 发布缓冲目标。
+ * @param src 普通目标。
+ */
+static void NmpcCopyTargetToVolatile(volatile BalanceNmpcTarget *dst,
+                                     const BalanceNmpcTarget *src)
+{
+    dst->target_v = src->target_v;
+    dst->target_wz = src->target_wz;
+    dst->target_pitch = src->target_pitch;
+    dst->target_roll = src->target_roll;
+    dst->target_leg_len_l = src->target_leg_len_l;
+    dst->target_leg_len_r = src->target_leg_len_r;
+    dst->timestamp_ms = src->timestamp_ms;
+    dst->valid = src->valid;
+}
+
+/**
+ * @brief 从 volatile 发布缓冲拷贝出普通 target。
+ *
+ * @param dst 普通目标。
+ * @param src 发布缓冲目标。
+ */
+static void NmpcCopyTargetFromVolatile(BalanceNmpcTarget *dst,
+                                       const volatile BalanceNmpcTarget *src)
+{
+    dst->target_v = src->target_v;
+    dst->target_wz = src->target_wz;
+    dst->target_pitch = src->target_pitch;
+    dst->target_roll = src->target_roll;
+    dst->target_leg_len_l = src->target_leg_len_l;
+    dst->target_leg_len_r = src->target_leg_len_r;
+    dst->timestamp_ms = src->timestamp_ms;
+    dst->valid = src->valid;
+}
+
+/**
+ * @brief 发布一个新的 NMPC target。
+ *
+ * 使用双缓冲和奇偶序号：写入期间序号为奇数，写完后变回偶数。
+ *
+ * @param target 待发布目标。
+ */
+static void NmpcPublishTarget(const BalanceNmpcTarget *target)
+{
+    const uint8_t next_index = (uint8_t)((nmpc_target_write_index ^ 1u) & 1u);
+
+    nmpc_target_seq++;
+    NmpcCopyTargetToVolatile(&nmpc_target_buffer[next_index], target);
+    nmpc_target_read_index = next_index;
+    nmpc_target_write_index = next_index;
+    nmpc_target_seq++;
+}
+
+/**
+ * @brief 清除已发布的 NMPC target。
+ */
+static void NmpcInvalidateTarget(void)
+{
+    const BalanceNmpcTarget invalid_target = {0};
+    NmpcPublishTarget(&invalid_target);
+}
+
+/**
+ * @brief 读取最新 NMPC target，并校验读取过程中没有被 200Hz 任务改写。
+ *
+ * @param target 输出目标。
+ * @return 1 表示读取到稳定且有效的目标，0 表示目标无效或正在更新。
+ */
+static uint8_t NmpcReadPublishedTarget(BalanceNmpcTarget *target)
+{
+    uint32_t seq_before;
+    uint32_t seq_after;
+    uint8_t read_index;
+
+    if (target == 0) return 0u;
+
+    seq_before = nmpc_target_seq;
+    if ((seq_before & 1u) != 0u) return 0u;
+
+    read_index = (uint8_t)(nmpc_target_read_index & 1u);
+    NmpcCopyTargetFromVolatile(target, &nmpc_target_buffer[read_index]);
+
+    seq_after = nmpc_target_seq;
+    if (seq_before != seq_after) return 0u;
+    if ((seq_after & 1u) != 0u) return 0u;
+    return target->valid;
+}
+
+/**
  * @brief 重置 NMPC 上层规划器内部状态。
  */
 static void NmpcResetPlannerState(void)
@@ -162,7 +256,7 @@ static void NmpcPlayTimeoutAlarm(void)
 static void NmpcEnterFallback(void)
 {
     /* fallback 只撤销 NMPC 参考，不停底层平衡控制。 */
-    nmpc_target.valid = 0u;
+    NmpcInvalidateTarget();
     nmpc_status.active = 0u;
     nmpc_status.mode = BALANCE_NMPC_FALLBACK;
     nmpc_status.fallback_count++;
@@ -795,7 +889,7 @@ void BalanceNmpcTaskUpdate(const BalanceState *state, const Chassis_Ctrl_Cmd_s *
         state->chassis.cali_flag != 0u ||
         cmd->chassis_mode != CHASSIS_STAND)
     {
-        nmpc_target.valid = 0u;
+        NmpcInvalidateTarget();
         nmpc_status.active = 0u;
         nmpc_status.mode = BALANCE_NMPC_DISABLED;
         NmpcResetPlannerState();
@@ -825,7 +919,7 @@ void BalanceNmpcTaskUpdate(const BalanceState *state, const Chassis_Ctrl_Cmd_s *
         return;
     }
 
-    nmpc_target = next_target;
+    NmpcPublishTarget(&next_target);
     nmpc_status.active = 1u;
     nmpc_status.mode = BALANCE_NMPC_ACTIVE;
     nmpc_status.last_update_ms = next_target.timestamp_ms;
@@ -835,7 +929,7 @@ void BalanceNmpcTaskUpdate(const BalanceState *state, const Chassis_Ctrl_Cmd_s *
 #else
     (void)state;
     (void)cmd;
-    nmpc_target.valid = 0u;
+    NmpcInvalidateTarget();
     nmpc_status.active = 0u;
     nmpc_status.mode = BALANCE_NMPC_DISABLED;
     NmpcResetPlannerState();
@@ -854,9 +948,9 @@ void BalanceNmpcApplyTarget(BalanceState *state)
     float now_ms;
 
     if (state == 0) return;
-    if (nmpc_status.active == 0u || nmpc_target.valid == 0u) return;
+    if (nmpc_status.active == 0u) return;
+    if (NmpcReadPublishedTarget(&target) == 0u) return;
 
-    target = nmpc_target;
     now_ms = DWT_GetTimeline_ms();
 
     /* 1000Hz/主平衡任务侧检查 200Hz NMPC 目标是否过期。 */
