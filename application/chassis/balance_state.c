@@ -322,7 +322,7 @@ static void Link2Leg(LinkNPodParam *p, const ChassisParam *chassis)
     p->theta = p->phi0 - 0.5f * BALANCE_PI - chassis->pitch;
     p->height = p->leg_len * cosf(p->theta);
 
-    const float predict_dt = 0.002f;
+    const float predict_dt = 1.0f / BALANCE_CONTROL_FREQ;
     float phi1_pred = p->phi1 + p->phi1_w * predict_dt;
     float phi4_pred = p->phi4 + p->phi4_w * predict_dt;
 
