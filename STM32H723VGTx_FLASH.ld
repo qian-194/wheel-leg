@@ -69,6 +69,19 @@ ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
 }
 
+PHDRS
+{
+  flash_text PT_LOAD FLAGS(5);   /* R + X */
+  flash_rodata PT_LOAD FLAGS(4); /* R */
+  ram_data PT_LOAD FLAGS(6);     /* R + W */
+  ram_bss PT_LOAD FLAGS(6);      /* R + W */
+  dtcm_data PT_LOAD FLAGS(6);    /* R + W */
+  dtcm_bss PT_LOAD FLAGS(6);     /* R + W */
+  ram_d2_data PT_LOAD FLAGS(6);  /* R + W */
+  ram_d3_data PT_LOAD FLAGS(6);  /* R + W */
+  itcm_text PT_LOAD FLAGS(5);    /* R + X */
+}
+
 /* Define output sections */
 SECTIONS
 {
@@ -78,7 +91,7 @@ SECTIONS
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :flash_text
 
   /* The program code and other data goes into FLASH */
   .text :
@@ -95,7 +108,7 @@ SECTIONS
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
-  } >FLASH
+  } >FLASH :flash_text
 
   /* Constant data goes into FLASH */
   .rodata :
@@ -104,35 +117,35 @@ SECTIONS
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :flash_rodata
 
-  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
+  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH :flash_rodata
   .ARM : {
     __exidx_start = .;
     *(.ARM.exidx*)
     __exidx_end = .;
-  } >FLASH
+  } >FLASH :flash_rodata
 
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
-  } >FLASH
+  } >FLASH :flash_rodata
   .init_array :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
-  } >FLASH
+  } >FLASH :flash_rodata
   .fini_array :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
     KEEP (*(SORT(.fini_array.*)))
     KEEP (*(.fini_array*))
     PROVIDE_HIDDEN (__fini_array_end = .);
-  } >FLASH
+  } >FLASH :flash_rodata
 
   _siitcm_text = LOADADDR(.itcm_text);
 
@@ -145,7 +158,7 @@ SECTIONS
     *(.itcm_text*)
     . = ALIGN(4);
     _eitcm_text = .;
-  } >ITCMRAM AT> FLASH
+  } >ITCMRAM AT> FLASH :itcm_text
 
   _sidtcm_data = LOADADDR(.dtcm_data);
 
@@ -158,7 +171,7 @@ SECTIONS
     *(.dtcm_data*)
     . = ALIGN(4);
     _edtcm_data = .;
-  } >DTCMRAM AT> FLASH
+  } >DTCMRAM AT> FLASH :dtcm_data
 
   /* Zero-initialized CPU-only data in DTCM */
   .dtcm_bss (NOLOAD) :
@@ -169,7 +182,7 @@ SECTIONS
     *(.dtcm_bss*)
     . = ALIGN(8);
     _edtcm_bss = .;
-  } >DTCMRAM
+  } >DTCMRAM :NONE
 
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
@@ -184,7 +197,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >RAM AT> FLASH
+  } >RAM AT> FLASH :ram_data
 
   
   /* Uninitialized data section */
@@ -201,7 +214,7 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >RAM
+  } >RAM :NONE
 
   /* DMA-safe non-cacheable buffers in D2 SRAM */
   .dma_buffer (NOLOAD) :
@@ -212,7 +225,7 @@ SECTIONS
     *(.dma_buffer*)
     . = ALIGN(32);
     _edma_buffer = .;
-  } >RAM_D2
+  } >RAM_D2 :NONE
 
   .ram_d2 (NOLOAD) :
   {
@@ -222,7 +235,7 @@ SECTIONS
     *(.ram_d2*)
     . = ALIGN(4);
     _eram_d2 = .;
-  } >RAM_D2
+  } >RAM_D2 :NONE
 
   .ram_d3 (NOLOAD) :
   {
@@ -232,7 +245,7 @@ SECTIONS
     *(.ram_d3*)
     . = ALIGN(4);
     _eram_d3 = .;
-  } >RAM_D3
+  } >RAM_D3 :NONE
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
@@ -244,7 +257,7 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = ALIGN(8);
     PROVIDE ( _heap_min_end = . );
-  } >RAM
+  } >RAM :NONE
 
   PROVIDE ( _heap_end = ORIGIN(RAM) + LENGTH(RAM) );
 
