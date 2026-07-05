@@ -21,6 +21,8 @@
 #include "robot_cmd.h"
 #endif
 
+static uint8_t ins_offline_buzzer_played = 0;
+
 static void RobotINSOfflineCallback(void)
 {
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD)
@@ -32,7 +34,11 @@ static void RobotINSOfflineCallback(void)
     ShootStopAll();
 #endif
 
-    BuzzerAppPlay(BUZZER_APP_SOUND_HIGH_LONG);
+    if (!ins_offline_buzzer_played)
+    {
+        ins_offline_buzzer_played = 1;
+        // BuzzerAppPlay(BUZZER_APP_SOUND_HIGH_LONG);
+    }
 }
 
 
@@ -47,8 +53,8 @@ void RobotInit()
 
 #if defined(ONE_BOARD) || defined(GIMBAL_BOARD)
     RobotCMDInit();
-    GimbalInit();
-    ShootInit();
+    //GimbalInit();
+    //ShootInit();
 #endif
 
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD)
@@ -73,8 +79,8 @@ void RobotTask()
 
 #if defined(ONE_BOARD) || defined(GIMBAL_BOARD)
     RobotCMDTask();
-    GimbalTask();
-    ShootTask();
+    //GimbalTask();
+    //ShootTask();
 #endif
 
 #if defined(ONE_BOARD) || defined(CHASSIS_BOARD)

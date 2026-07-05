@@ -119,23 +119,31 @@ static void CalcOffsetAngle()
 static void RemoteControlSet()
 {   
     // 右侧遥感控制前后左右
-    chassis_cmd_send.vx = fs_data->rocker_r1*0.004;
-    chassis_cmd_send.wz = fs_data->rocker_r_*0.004;
-    if(fs_data->switch_l1 ==1){
+    chassis_cmd_send.vx = fs_data->rocker_r1 * 0.004f;
+    chassis_cmd_send.wz = fs_data->rocker_r_ * 0.004f;
+    chassis_cmd_send.leg_height_l = 0.15f;
+    chassis_cmd_send.leg_height_r = 0.15f;
+
+    robot_state = ROBOT_STOP;
+    chassis_cmd_send.chassis_mode = CHASSIS_ZERO_FORCE;
+
+    if (fs_data->switch_l1 == FS_SW_UP)
+    {
         robot_state = ROBOT_STOP;
         chassis_cmd_send.chassis_mode = CHASSIS_ZERO_FORCE;
     }
-    else if(fs_data->switch_l1 == 2 && fs_data->switch_r2 ==1){
+    else if (fs_data->switch_l1 == FS_SW_DOWN && fs_data->switch_r2 == FS_SW_UP)
+    {
         robot_state = ROBOT_READY;
         chassis_cmd_send.chassis_mode = CHASSIS_JOINT_ZERO_FORCE;
     }
-    else if(fs_data->switch_l1 == 2 && fs_data->switch_r2 ==2){
+    else if (fs_data->switch_l1 == FS_SW_DOWN && fs_data->switch_r2 == FS_SW_DOWN)
+    {
         robot_state = ROBOT_READY;
         chassis_cmd_send.chassis_mode = CHASSIS_STAND;
     }
-    chassis_cmd_send.leg_height_l=0.15;
-    chassis_cmd_send.leg_height_r=0.15;
-    if(fs_data->switch_l2==2){
+    if (fs_data->switch_l2 == FS_SW_DOWN)
+    {
         BuzzerAppPlay(BUZZER_APP_SOUND_SEE_YOU_AGAIN);
     }
     // if(fs_data->switch_r1 == 1){

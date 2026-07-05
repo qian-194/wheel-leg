@@ -7,8 +7,34 @@
 
 static uint8_t idx;
 static LKMotorInstance *lkmotor_instance[LK_MOTOR_MX_CNT] = {NULL};
-static CANInstance *sender_instance; // 多电机发送时使用的caninstance(当前保存的是注册的第一个电机的caninstance)
+static CANInstance *sender_instances[LK_MOTOR_MX_CNT] = {NULL}; // 每条CAN总线一个LK多电机发送实例
+static uint8_t sender_idx;
 // 后续考虑兼容单电机和多电机指令.
+
+#define LK_MULTI_MOTOR_TX_ID 0x280U
+
+static CANInstance *LKMotorGetSender(CANInstance *motor_can)
+{
+    for (uint8_t i = 0; i < sender_idx; i++)
+    {
+        if (sender_instances[i]->can_handle == motor_can->can_handle)
+        {
+            return sender_instances[i];
+        }
+    }
+
+    if (sender_idx >= LK_MOTOR_MX_CNT)
+        while (1)
+            ;
+
+#ifdef FDCAN
+    motor_can->txconf.Identifier = LK_MULTI_MOTOR_TX_ID;
+#else
+    motor_can->txconf.StdId = LK_MULTI_MOTOR_TX_ID;
+#endif
+    sender_instances[sender_idx++] = motor_can;
+    return motor_can;
+}
 
 /**
  * @brief 电机反馈报文解析
@@ -46,8 +72,12 @@ static void LKMotorDecode(CANInstance *_instance)
 
 static void LKMotorLostCallback(void *motor_ptr)
 {
+#ifdef DISABLE_LOG_SYSTEM
+    (void)motor_ptr;
+#else
     LKMotorInstance *motor = (LKMotorInstance *)motor_ptr;
     LOGWARNING("[LKMotor] motor lost, id: %d", motor->motor_can_ins->tx_id);
+#endif
 }
 
 LKMotorInstance *LKMotorInit(Motor_Init_Config_s *config)
@@ -70,11 +100,7 @@ LKMotorInstance *LKMotorInit(Motor_Init_Config_s *config)
     config->can_init_config.tx_id = config->can_init_config.tx_id + 0x280 - 1; // 这样在发送写入buffer的时候更方便,因为下标从0开始,LK多电机发送id为0x280
     motor->motor_can_ins = CANRegister(&config->can_init_config);
 
-    if (idx == 0) // 用第一个电机的can instance发送数据
-    {
-        sender_instance = motor->motor_can_ins;
-        sender_instance->tx_id = 0x280; //  修改tx_id为0x280,用于多电机发送,不用管其他LKMotorInstance的tx_id,它们仅作初始化用
-    }
+    LKMotorGetSender(motor->motor_can_ins);
 
     LKMotorEnable(motor);
     DWT_GetDeltaT(&motor->measure.feed_dwt_cnt);
@@ -90,7 +116,7 @@ LKMotorInstance *LKMotorInit(Motor_Init_Config_s *config)
     return motor;
 }
 
-/* 第一个电机的can instance用于发送数据,向其tx_buff填充数据 */
+/* 每条CAN总线使用该总线上的第一个LK电机can instance发送0x280多电机控制帧 */
 void LKMotorControl()
 {
     float pid_measure, pid_ref;
@@ -98,6 +124,13 @@ void LKMotorControl()
     LKMotorInstance *motor;
     LKMotor_Measure_t *measure;
     Motor_Control_Setting_s *setting;
+    CANInstance *sender;
+    uint32_t buff_offset;
+
+    for (uint8_t i = 0; i < sender_idx; i++)
+    {
+        memset(sender_instances[i]->tx_buff, 0, sizeof(sender_instances[i]->tx_buff));
+    }
 
     for (size_t i = 0; i < idx; ++i)
     {
@@ -136,17 +169,27 @@ void LKMotorControl()
         set = pid_ref;
         if (setting->motor_reverse_flag == MOTOR_DIRECTION_REVERSE)
             set *= -1;
-        // 这里随便写的,为了兼容多电机命令.后续应该将tx_id以更好的方式表达电机id,单独使用一个CANInstance,而不是用第一个电机的CANInstance
-        memcpy(sender_instance->tx_buff + (motor->motor_can_ins->tx_id - 0x280) * 2, &set, sizeof(uint16_t));
+        sender = LKMotorGetSender(motor->motor_can_ins);
+        buff_offset = (motor->motor_can_ins->tx_id - LK_MULTI_MOTOR_TX_ID) * 2U;
+        if (buff_offset >= sizeof(sender->tx_buff))
+        {
+            continue;
+        }
 
         if (motor->stop_flag == MOTOR_STOP)
         { // 若该电机处于停止状态,直接将发送buff置零
-            memset(sender_instance->tx_buff + (motor->motor_can_ins->tx_id - 0x280) * 2, 0, sizeof(uint16_t));
+            memset(sender->tx_buff + buff_offset, 0, sizeof(uint16_t));
+        }
+        else
+        {
+            memcpy(sender->tx_buff + buff_offset, &set, sizeof(uint16_t));
         }
     }
 
-    if (idx) // 如果有电机注册了
-        CANTransmit(sender_instance, 0.2);
+    for (uint8_t i = 0; i < sender_idx; i++)
+    {
+        CANTransmit(sender_instances[i], 0.2);
+    }
 }
 
 void LKMotorStop(LKMotorInstance *motor)

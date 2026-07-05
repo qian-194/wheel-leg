@@ -57,10 +57,8 @@ static float chassis_vx, chassis_vy;     // 将云台系的速度投影到底盘
 
 #define TWO_WHEEL_OPEN_LOOP_GAIN 200.0f
 #define TWO_WHEEL_OPEN_LOOP_MAX 600.0f
-#define JOINT_CALI_SPEED_TH 0.05f
-#define JOINT_CALI_TORQUE_TH 1.5f
-#define JOINT_CALI_CONFIRM_CNT 100u
-#define JOINT_CALI_CNT_MAX 250u
+#define JOINT_CALI_CURRENT_REF 1.2f
+#define JOINT_CALI_DURATION_S 3.0f
 
 static uint8_t JointCalibEncoder(void);
 static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd);
@@ -132,7 +130,8 @@ void BalanceInit()
     joint[RB] = rb = HTMotorInit(&joint_conf);
 
     // 驱动轮电机
-    Motor_Init_Config_s driven_conf = {
+    Motor_Init_Config_s driven_l_conf = {
+        .can_init_config.can_handle = &hcan1,
         .controller_param_init_config = {
             .angle_PID = {
                 .Kp = 300,
@@ -163,18 +162,50 @@ void BalanceInit()
         .motor_type = LK9025,
         .motor_mode = TORQUE_MODE,
     };
+
+    Motor_Init_Config_s driven_r_conf = {
+        .can_init_config.can_handle = &hcan2,
+        .controller_param_init_config = {
+            .angle_PID = {
+                .Kp = 300,
+                .Kd = 15,
+                .Ki = 0,
+                .DeadBand = 0.01,
+                .Improve = PID_DerivativeFilter | PID_Derivative_On_Measurement,
+                .MaxOut = 1500,
+                .Derivative_LPF_RC = 0.05,
+            }, // 仅用于静止
+            .speed_PID = {
+                .Kp = 500,
+                .Kd = 15,
+                .Ki = 10,
+                .IntegralLimit = 100,
+                .DeadBand = 0.0001,
+                .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
+                .MaxOut = 1500,
+                .Derivative_LPF_RC = 0.05,
+            }, // 仅用于静止
+        },
+        .controller_setting_init_config = {
+            .close_loop_type = ANGLE_LOOP | SPEED_LOOP,
+            .outer_loop_type = OPEN_LOOP,
+            .angle_feedback_source = MOTOR_FEED,
+            .speed_feedback_source = MOTOR_FEED,
+        },
+        .motor_type = LK9025,
+        .motor_mode = TORQUE_MODE,
+    };
+    // 依旧保持电池为后
     // driven_l_conf.can_init_config.can_handle = &hcan1;
-    driven_conf.can_init_config.can_handle = &hcan1,
-    driven_conf.can_init_config.tx_id = 1;
-    driven_conf.can_init_config.rx_id = 1;
-    driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_REVERSE; // 左轮反向
-    driven[LD] = l_driven = LKMotorInit(&driven_conf);
+    driven_l_conf.can_init_config.tx_id = 1;
+    driven_l_conf.can_init_config.rx_id = 1;
+    driven_l_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL; // 左轮不反向
+    driven[LD] = l_driven = LKMotorInit(&driven_l_conf);
     // driven_r_conf.can_init_config.can_handle = &hcan2;
-    driven_conf.can_init_config.can_handle = &hcan2,
-    driven_conf.can_init_config.tx_id = 2;
-    driven_conf.can_init_config.rx_id = 2;
-    driven_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_NORMAL;
-    driven[RD] = r_driven = LKMotorInit(&driven_conf);
+    driven_r_conf.can_init_config.tx_id = 2;
+    driven_r_conf.can_init_config.rx_id = 2;
+    driven_r_conf.controller_setting_init_config.motor_reverse_flag = FEEDBACK_DIRECTION_REVERSE; // 右轮反向
+    driven[RD] = r_driven = LKMotorInit(&driven_r_conf);
 
     BalanceStateReset(&balance_state);
     DWT_GetDeltaT(&balance_dwt_cnt);
@@ -212,19 +243,20 @@ void BalanceTask()
         .l_driven = l_driven,
         .r_driven = r_driven,
     };
-    //上电初始化确定位置
-    if (balance_state.chassis.cali_flag)
+
+    BalanceStateUpdate(&balance_state,
+                           Chassis_IMU_data,
+                           &chassis_cmd_recv,
+                           &motor_feedback,
+                           del_t);
+                           
+    // 上电初始化关节编码器零点，校准完成前不进入正常底盘控制。
+    if(balance_state.chassis.cali_flag)
     {
-        LKMotorSetRef(l_driven, 0.0f);
-        LKMotorSetRef(r_driven, 0.0f);
-        LKMotorStop(l_driven);
-        LKMotorStop(r_driven);
-
-        if (JointCalibEncoder() == 0u)
-            return;
-
-        balance_state.chassis.cali_flag = 0u;
+        if(JointCalibEncoder() == 0) return;
+        else balance_state.chassis.cali_flag = 0;
     }
+
     //chassismode的处理,根据不同模式进行不同的控制
     switch (chassis_cmd_recv.chassis_mode)
     {
@@ -233,23 +265,21 @@ void BalanceTask()
         break;
 
     case CHASSIS_JOINT_ZERO_FORCE:
+        LKMotorEnable(l_driven);
+        LKMotorEnable(r_driven);
         BalanceTwoWheelOpenLoopControl(&chassis_cmd_recv);
         break;
 
     case CHASSIS_STAND:
     default:
         BalanceMotorEnableAll();
-
-        BalanceStateUpdate(&balance_state,
-                           Chassis_IMU_data,
-                           &chassis_cmd_recv,
-                           &motor_feedback,
-                           del_t);
+        
         BalanceNmpcApplyTarget(&balance_state);
         BalanceControlUpdate(&balance_state, del_t);
         break;
     }
 
+balance_feedback_publish:
     chassis_feedback_data.chassis_imu_data = *Chassis_IMU_data;
     // 推送反馈消息
     #ifdef ONE_BOARD
@@ -324,68 +354,44 @@ void BalanceMotorEnableAll(void)
 /**
  * @brief 执行关节电机上电编码器校准。
  *
- * HT 关节电机掉电后会丢失绝对位置。校准流程将各关节缓慢推向短腿机械限位，
- * 当检测到速度足够低且堵转电流足够大并持续确认后，将当前位置标定为编码器零点。
+ * HT 关节电机掉电后会丢失绝对位置。校准流程将各关节用固定开环输出
+ * 推向短腿机械限位，持续 3s 后将当前位置标定为编码器零点。
  *
  * @return uint8_t 1 表示四个关节均完成校准；0 表示仍在校准过程中。
  */
 static uint8_t JointCalibEncoder(void)
 {
-    static uint8_t cali_flag[JOINT_CNT] = {0};
-    static uint8_t cali_cnt[JOINT_CNT] = {0};
+    static float cali_elapsed_s = 0.0f;
+    static const float joint_cali_ref[JOINT_CNT] = {
+        JOINT_CALI_CURRENT_REF,
+        -JOINT_CALI_CURRENT_REF,
+        -JOINT_CALI_CURRENT_REF,
+        JOINT_CALI_CURRENT_REF,
+    };
 
-    if (cali_flag[LF] == 0u && cali_flag[LB] == 0u &&
-        cali_flag[RF] == 0u && cali_flag[RB] == 0u)
+    cali_elapsed_s += del_t;
+
+    for (size_t i = 0; i < JOINT_CNT; i++)
     {
-        for (uint8_t i = 0; i < JOINT_CNT; i++)
-        {
-            HTMotorEnable(joint[i]);
-            HTMotorOuterLoop(joint[i], OPEN_LOOP);
-        }
+        joint[i]->motor_mode = MIT_MODE;
+        HTMotorEnable(joint[i]);
+        HTMotorOuterLoop(joint[i], OPEN_LOOP);
+        HTMotorSetRef(joint[i], joint_cali_ref[i]);
     }
 
-    for (uint8_t i = 0; i < JOINT_CNT; i++)
-    {
-        if (!cali_flag[i])
-        {
-            if (fabsf(joint[i]->measure.speed_rads) < JOINT_CALI_SPEED_TH &&
-                fabsf(joint[i]->measure.real_current) > JOINT_CALI_TORQUE_TH)
-            {
-                if (cali_cnt[i] < JOINT_CALI_CNT_MAX)
-                    cali_cnt[i]++;
+    if (cali_elapsed_s < JOINT_CALI_DURATION_S)
+        return 0;
 
-                if (cali_cnt[i] >= JOINT_CALI_CONFIRM_CNT)
-                {
-                    HTMotorCalibEncoder(joint[i]);
-                    HTMotorOuterLoop(joint[i], OPEN_LOOP);
-                    HTMotorSetRef(joint[i], 0.0f);
-                    HTMotorSetMITRef(joint[i], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-                    HTMotorStop(joint[i]);
-                    cali_flag[i] = 1u;
-                    cali_cnt[i] = 0u;
-                }
-            }
-            else
-            {
-                cali_cnt[i] = 0u;
-            }
-        }
+    for (size_t i = 0; i < JOINT_CNT; i++)
+    {
+        HTMotorCalibEncoder(joint[i]);
+        HTMotorSetRef(joint[i], 0.0f);
+        HTMotorSetMITRef(joint[i], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        HTMotorStop(joint[i]);
     }
 
-    if (!cali_flag[LF]) HTMotorSetRef(lf,  1.2f);
-    if (!cali_flag[LB]) HTMotorSetRef(lb, -1.2f);
-    if (!cali_flag[RF]) HTMotorSetRef(rf,  1.2f);
-    if (!cali_flag[RB]) HTMotorSetRef(rb, -1.2f);
-
-    for (uint8_t i = 0; i < JOINT_CNT; i++)
-    {
-        if (!cali_flag[i])
-            return 0u;
-    }
-
-    memset(cali_flag, 0, sizeof(cali_flag));
-    memset(cali_cnt, 0, sizeof(cali_cnt));
-    return 1u;
+    cali_elapsed_s = 0.0f;
+    return 1;
 }
 
 /**
@@ -398,8 +404,8 @@ static uint8_t JointCalibEncoder(void)
  */
 static void BalanceTwoWheelOpenLoopControl(const Chassis_Ctrl_Cmd_s *cmd)
 {
-    float left_v = cmd->vx - cmd->wz * TWO_WHEEL_TRACK_WIDTH_M * 0.5f;
-    float right_v = cmd->vx + cmd->wz * TWO_WHEEL_TRACK_WIDTH_M * 0.5f;
+    float left_v = cmd->vx - cmd->wz * TWO_WHEEL_TRACK_WIDTH_M ;
+    float right_v = cmd->vx + cmd->wz * TWO_WHEEL_TRACK_WIDTH_M ;
 
     float left_ref = left_v * TWO_WHEEL_OPEN_LOOP_GAIN;
     float right_ref = right_v * TWO_WHEEL_OPEN_LOOP_GAIN;

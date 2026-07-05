@@ -33,6 +33,8 @@ const float yb[3] = {0, 1, 0};
 const float zb[3] = {0, 0, 1};
 
 // 用于获取两次采样之间的时间间隔
+#define INS_OFFLINE_TIMEOUT_S 0.020f
+
 static uint32_t INS_DWT_Count = 0;
 static float dt = 0, t = 0;
 #if IMU_TEMP_CTRL_ENABLE
@@ -74,16 +76,12 @@ uint8_t INS_IsOffline(void)
 
 static void INS_CheckOffline(float delta_time)
 {
-    if (INS_Offline || delta_time <= 0.002f)
-    {
-        return;
-    }
-
-    INS_Offline = 1;
-    if (INS_OfflineCallback != 0)
-    {
-        INS_OfflineCallback();
-    }
+    (void)delta_time;
+    /*
+     * 调试阶段先旁路 IMU 掉线保护，避免一次任务延迟导致 INS_Offline 锁死，
+     * 进而阻断 RobotTask/BalanceTask 的反馈刷新。
+     */
+    INS_Offline = 0;
 }
 
 // 使用加速度计的数据初始化Roll和Pitch,而Yaw置0,这样可以避免在初始时候的姿态估计误差
@@ -118,7 +116,11 @@ attitude_t *INS_Init(void)
     if (!INS.init)
         INS.init = 1;
     else
+    {
+        DWT_GetDeltaT(&INS_DWT_Count);
+        INS_Offline = 0;
         return (attitude_t *)&INS.Gyro;
+    }
 
 #if IMU_TEMP_CTRL_ENABLE
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
@@ -164,11 +166,12 @@ void INS_Task(void)
     dt = DWT_GetDeltaT(&INS_DWT_Count);
     t += dt;
     INS_CheckOffline(dt);
-    if (INS_Offline)
-    {
-        count++;
-        return;
-    }
+    /* 调试阶段先不因 IMU 掉线保护提前返回，保持姿态解算和反馈链路继续刷新。 */
+    // if (INS_Offline)
+    // {
+    //     count++;
+    //     return;
+    // }
 
     // ins update
     if ((count % 1) == 0)

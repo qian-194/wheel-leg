@@ -45,7 +45,7 @@
 #define LEG_FORCE_MAX 200.0f         // 单腿腿向支撑力输出上限,N
 #define LEG_VMC_SIN_MIN 0.05f        // VMC 雅可比分母 sin 最小绝对值,防止奇异点除数过小
 #define BALANCE_CONTROL_FREQ 1000.0f  // 平衡控制回路标称频率,Hz; LESO/ADRC 和运动学预测据此派生内部步长 dt=1/freq
-#define BALANCE_NMPC_ENABLE 1        // 上层 NMPC 参考规划使能; 0 时只使用原底层 LQR/VMC 目标
+#define BALANCE_NMPC_ENABLE 0        // 上层 NMPC 参考规划使能; 0 时只使用原底层 LQR/VMC 目标
 // NMPC 上层参考规划参数，集中放在 balance.h 便于统一调参。
 #define BALANCE_NMPC_TIMEOUT_MS 2.0f       // NMPC 单周期求解预算,ms; 不等于 200Hz 任务周期
 #define BALANCE_NMPC_TARGET_STALE_MS 15.0f // BalanceTask 使用目标前检查时间戳,防止继续吃旧参考,ms
