@@ -97,7 +97,7 @@ static void HTMotorLostCallback(void *motor_ptr)
     HTMotorInstance *motor = (HTMotorInstance *)motor_ptr;
     LOGWARNING("[ht_motor] motor %d lost\n", motor->motor_can_instace->tx_id);
     if (++motor->lost_cnt % 10 != 0)
-        HTMotorSetMode(CMD_MOTOR_MODE, motor); // 尝试重新让电机进入控制模式
+        motor->reenter_mode_req = 1; // 只置请求标志,由HT任务在自身上下文发送,避免与HT任务并发写tx_buff
 }
 
 /* 海泰电机一生黑,什么垃圾协议! */
@@ -226,6 +226,12 @@ __attribute__((noreturn)) void HTMotorTask(void const *argument)
 
     while (1)
     {
+        if (motor->reenter_mode_req) // daemon请求重新进入电机模式,在本任务上下文发送保证tx_buff无并发
+        {
+            motor->reenter_mode_req = 0;
+            HTMotorSetMode(CMD_MOTOR_MODE, motor);
+        }
+
         if (motor->motor_mode == MIT_MODE)
         {
             HTMotor_MIT_Ref_t mit_ref = motor->mit_ref;
@@ -299,19 +305,31 @@ __attribute__((noreturn)) void HTMotorTask(void const *argument)
 
 void HTMotorControlInit()
 {
-    char ht_task_name[5] = "ht";
+    osThreadDef(htmotortask, HTMotorTask, osPriorityNormal, 0, 128);
     // 遍历所有电机实例,创建任务
     if (!idx)
         return;
     for (size_t i = 0; i < idx; i++)
     {
-        char ht_id_buff[2] = {0};
-        __itoa(i, ht_id_buff, 10);
-        strcat(ht_task_name, ht_id_buff); // 似乎没什么吊用,osthreaddef会把第一个变量当作宏字符串传入,作为任务名
-        // @todo 还需要一个更优雅的方案来区分不同的电机任务
-        osThreadDef(ht_task_name, HTMotorTask, osPriorityNormal, 0, 128);
-        ht_task_handle[i] = osThreadCreate(osThread(ht_task_name), ht_motor_instance[i]);
+        ht_task_handle[i] = osThreadCreate(osThread(htmotortask), ht_motor_instance[i]);
     }
+}
+
+/* 挂起/恢复所有HT发送任务.
+ * HTMotorCalibEncoder等直接操作tx_buff的函数在运行期调用时,
+ * 必须先挂起HT任务,否则两个上下文并发写同一tx_buff会向总线发出内容撕裂的报文 */
+void HTMotorTasksSuspendAll(void)
+{
+    for (size_t i = 0; i < idx; i++)
+        if (ht_task_handle[i] != NULL)
+            osThreadSuspend(ht_task_handle[i]);
+}
+
+void HTMotorTasksResumeAll(void)
+{
+    for (size_t i = 0; i < idx; i++)
+        if (ht_task_handle[i] != NULL)
+            osThreadResume(ht_task_handle[i]);
 }
 
 void HTMotorStop(HTMotorInstance *motor)

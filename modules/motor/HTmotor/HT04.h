@@ -73,6 +73,7 @@ typedef struct
 
     DaemonInstance *motor_daemon;
     uint32_t lost_cnt;
+    volatile uint8_t reenter_mode_req; // daemon检测到掉线时置位,由HT任务在自身上下文中发送进入电机模式指令(避免跨任务写tx_buff)
 } HTMotorInstance;
 
 /* HT电机模式,初始化时自动进入CMD_MOTOR_MODE*/
@@ -134,6 +135,14 @@ float HTMotorCalcMITTorque(const HTMotorInstance *motor,
  *
  */
 void HTMotorControlInit();
+
+/**
+ * @brief 挂起/恢复所有HT电机发送任务
+ *        运行期调用HTMotorCalibEncoder/HTMotorSetMode等直接写tx_buff的函数前必须先挂起,
+ *        否则与HT任务并发写同一tx_buff会向总线发出内容撕裂的报文
+ */
+void HTMotorTasksSuspendAll(void);
+void HTMotorTasksResumeAll(void);
 
 /**
  * @brief 停止电机,之后电机不会响应HTMotorSetRef设定的值

@@ -379,9 +379,12 @@ static uint8_t JointCalibEncoder(void)
         HTMotorSetRef(joint[i], joint_cali_ref[i]);
     }
 
-    if (cali_elapsed_s < JOINT_CALI_DURATION_S)
+    if (cali_elapsed_s < 4)
         return 0;
 
+    // 校准收尾会直接写各关节tx_buff并阻塞发送(含DWT忙等),期间必须挂起HT发送任务,
+    // 否则并发写tx_buff会向总线发出撕裂报文(此前引发LK电机停回帧的触发点)
+    HTMotorTasksSuspendAll();
     for (size_t i = 0; i < JOINT_CNT; i++)
     {
         HTMotorCalibEncoder(joint[i]);
@@ -389,6 +392,7 @@ static uint8_t JointCalibEncoder(void)
         HTMotorSetMITRef(joint[i], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         HTMotorStop(joint[i]);
     }
+    HTMotorTasksResumeAll();
 
     cali_elapsed_s = 0.0f;
     return 1;

@@ -114,21 +114,21 @@ void CANServiceInit()
 
 
 	//HAL_FDCAN_ConfigClockCalibration()
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan1,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_OVERWRITE);
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan1,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_OVERWRITE);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan1,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_BLOCKING);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan1,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_BLOCKING);
 	HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_REJECT, FDCAN_REJECT, FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE);//全局过滤器设置
 	HAL_FDCAN_Start(&hfdcan1);
 	HAL_FDCAN_ActivateNotification(&hfdcan1,FDCAN_RXActiveITs, 0);
 
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan2,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_OVERWRITE);
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan2,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_OVERWRITE);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan2,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_BLOCKING);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan2,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_BLOCKING);
 	HAL_FDCAN_ConfigGlobalFilter(&hfdcan2, FDCAN_REJECT, FDCAN_REJECT, FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE);
 	HAL_FDCAN_Start(&hfdcan2);
 	HAL_FDCAN_ActivateNotification(&hfdcan2,FDCAN_RXActiveITs, 0);
 
 
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan3,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_OVERWRITE);
-	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan3,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_OVERWRITE);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan3,FDCAN_RX_FIFO0,FDCAN_RX_FIFO_BLOCKING);
+	HAL_FDCAN_ConfigRxFifoOverwrite(&hfdcan3,FDCAN_RX_FIFO1,FDCAN_RX_FIFO_BLOCKING);
 	HAL_FDCAN_ConfigGlobalFilter(&hfdcan3, FDCAN_REJECT, FDCAN_REJECT, FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE);
 	HAL_FDCAN_Start(&hfdcan3);
 	HAL_FDCAN_ActivateNotification(&hfdcan3,FDCAN_RXActiveITs, 0);
@@ -212,34 +212,56 @@ uint8_t CANTransmit(CANInstance *_instance, float timeout)
 {
     static uint32_t busy_count;
     static volatile float wait_time __attribute__((unused)); // for cancel warning
+    uint32_t primask;
+    uint8_t add_ok;
     float dwt_start = DWT_GetTimeline_ms();
-#ifdef FDCAN
-    while(HAL_FDCAN_GetTxFifoFreeLevel(_instance->can_handle)==0)
-#else
-    while (HAL_CAN_GetTxMailboxesFreeLevel(_instance->can_handle) == 0) // 等待邮箱空闲
-#endif
-    {
-        if (DWT_GetTimeline_ms() - dwt_start > timeout) // 超时
-        {
-            LOGWARNING("[bsp_can] CAN MAILbox full! failed to add msg to mailbox. Cnt [%d]", busy_count);
-            busy_count++;
-            return 0;
-        }
-    }
-    wait_time = DWT_GetTimeline_ms() - dwt_start;
 
-#ifdef FDCAN
-    if (HAL_FDCAN_AddMessageToTxFifoQ(_instance->can_handle, &_instance->txconf, _instance->tx_buff))
-#else
-    // tx_mailbox会保存实际填入了这一帧消息的邮箱,但是知道是哪个邮箱发的似乎也没啥用
-    if (HAL_CAN_AddTxMessage(_instance->can_handle, &_instance->txconf, _instance->tx_buff, &_instance->tx_mailbox))
-#endif
+    // HAL的入队函数(AddMessageToTxFifoQ/AddTxMessage)非线程安全:
+    // 两个任务并发调用会读到同一个PutIndex/mailbox,后写者静默覆盖先写者的报文,且不触发任何错误计数.
+    // 配置HT电机后同一条总线上存在多个发送任务(HT任务/motor task/daemon),必须保护.
+    // 处理方式:等待空闲在临界区外自旋(可长达timeout),"确认空闲+入队"整体关中断保护;
+    // 若关中断后发现FIFO已被其他任务抢占,则回到等待循环继续等,直到成功或超时.
+    while (1)
     {
-        LOGWARNING("[bsp_can] CAN bus BUSY! cnt:%d", busy_count);
-        busy_count++;
-        return 0;
+#ifdef FDCAN
+        while (HAL_FDCAN_GetTxFifoFreeLevel(_instance->can_handle) == 0)
+#else
+        while (HAL_CAN_GetTxMailboxesFreeLevel(_instance->can_handle) == 0) // 等待邮箱空闲
+#endif
+        {
+            if (DWT_GetTimeline_ms() - dwt_start > timeout) // 超时
+            {
+                LOGWARNING("[bsp_can] CAN MAILbox full! failed to add msg to mailbox. Cnt [%d]", busy_count);
+                busy_count++;
+                return 0;
+            }
+        }
+        wait_time = DWT_GetTimeline_ms() - dwt_start;
+
+        primask = __get_PRIMASK();
+        __disable_irq();
+#ifdef FDCAN
+        if (HAL_FDCAN_GetTxFifoFreeLevel(_instance->can_handle) > 0)
+        {
+            add_ok = (HAL_FDCAN_AddMessageToTxFifoQ(_instance->can_handle, &_instance->txconf, _instance->tx_buff) == HAL_OK);
+#else
+        if (HAL_CAN_GetTxMailboxesFreeLevel(_instance->can_handle) > 0)
+        {
+            // tx_mailbox会保存实际填入了这一帧消息的邮箱,但是知道是哪个邮箱发的似乎也没啥用
+            add_ok = (HAL_CAN_AddTxMessage(_instance->can_handle, &_instance->txconf, _instance->tx_buff, &_instance->tx_mailbox) == HAL_OK);
+#endif
+            __set_PRIMASK(primask);
+            if (!add_ok)
+            {
+                LOGWARNING("[bsp_can] CAN bus BUSY! cnt:%d", busy_count);
+                busy_count++;
+                return 0;
+            }
+            return 1; // 发送成功
+        }
+        __set_PRIMASK(primask);
+        // 走到这里说明空闲位置在入队前被其他任务抢走,回到外层循环重新等待(超时基准不变)
     }
-    return 1; // 发送成功
 }
 
 void CANSetDLC(CANInstance *_instance, uint8_t length)
@@ -258,6 +280,11 @@ void CANSetDLC(CANInstance *_instance, uint8_t length)
 
 //对于FDCAN，回调函数和处理方式完全不同，因此直接用两套逻辑处理
 #ifdef FDCAN
+
+/* RX FIFO为BLOCKING模式,FIFO满时新帧被拒收并触发MESSAGE_LOST中断,在此计数以便发现丢帧 */
+static volatile uint32_t fdcan_fifo0_lost_count;
+static volatile uint32_t fdcan_fifo1_lost_count;
+
 /**
  * @brief 此函数会被下面两个函数调用,用于处理FIFO0和FIFO1溢出中断(说明收到了新的数据)
  *        所有的实例都会被遍历,找到can_handle和rx_id相等的实例时,调用该实例的回调函数
@@ -273,6 +300,7 @@ static void FDCANFIFOxCallback(FDCAN_HandleTypeDef *_hfdcan, uint32_t fifox)
     while (HAL_FDCAN_GetRxFifoFillLevel(_hfdcan, fifox)) // FIFO不为空,有可能在其他中断时有多帧数据进入
     {
         HAL_FDCAN_GetRxMessage(_hfdcan, fifox, &rxconf, fdcan_rx_buff); // 从FIFO中获取数据
+
 		//解析数据长度，@Todo 此处在用新版本重新生成后可能得修改，DataLength可能不需要右移，具体情况具体看	！
 		if(((rxconf.DataLength >> 16) & 0xF)>=0 && ((rxconf.DataLength >> 16) & 0xF)<=8)
 		{
@@ -295,7 +323,7 @@ static void FDCANFIFOxCallback(FDCAN_HandleTypeDef *_hfdcan, uint32_t fifox)
 						memcpy(can_instance[i]->rx_buff, fdcan_rx_buff, can_instance[i]->rx_len); // 消息拷贝到对应实例
 						can_instance[i]->can_module_callback(can_instance[i]);     // 触发回调进行数据解析和处理
 					}
-					return;
+					break;
 				}
 			}
         }
@@ -308,7 +336,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 	/* 检查Rx FIFO 0中是否有消息丢失 */
 	if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_MESSAGE_LOST) != 0)
 	{
-		//报错
+		fdcan_fifo0_lost_count++;
 	}
 	/* 检查是否有新消息写入Rx FIFO 0或到达一定阈值 */
 	if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE)||(RxFifo0ITs & FDCAN_IT_RX_FIFO0_FULL)||(RxFifo0ITs & FDCAN_IT_RX_FIFO0_WATERMARK))
@@ -321,7 +349,7 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 	/* 检查Rx FIFO 1中是否有消息丢失 */
 	if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_MESSAGE_LOST) != 0)
 	{
-		//报错
+		fdcan_fifo1_lost_count++;
 	}
 	/* 检查是否有新消息写入Rx FIFO 1或到达一定阈值 */
 	if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE)||(RxFifo1ITs & FDCAN_IT_RX_FIFO1_FULL)||(RxFifo1ITs & FDCAN_IT_RX_FIFO1_WATERMARK))

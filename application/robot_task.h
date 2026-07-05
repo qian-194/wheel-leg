@@ -114,7 +114,7 @@ __attribute__((noreturn)) void StartDAEMONTASK(void const *argument)
         daemon_dt = DWT_GetTimeline_ms() - daemon_start;
         if (daemon_dt > 10)
             LOGERROR("[freeRTOS] Daemon Task is being DELAY! dt = [%f]", &daemon_dt);
-        osDelay(10);
+        osDelay(20);
     }
 }
 
@@ -143,7 +143,7 @@ __attribute__((noreturn)) void StartNMPCTASK(void const *argument)
     for (;;)
     {
         nmpc_start = DWT_GetTimeline_ms();
-        BalanceNmpcTask();
+        //BalanceNmpcTask();
         nmpc_dt = DWT_GetTimeline_ms() - nmpc_start;
         if (nmpc_dt > 2)
             LOGERROR("[freeRTOS] NMPC Task is being DELAY! dt = [%f]", &nmpc_dt);

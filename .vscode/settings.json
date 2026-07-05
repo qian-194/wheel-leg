@@ -15,5 +15,6 @@
         "bsp_log.h": "c"
     },
     "cortex-debug.openocdPath": "C:\\OpenOCD-20251211-0.12.0\\bin\\openocd.EXE",
-    "C_Cpp.errorSquiggles": "disabled"
+    "C_Cpp.errorSquiggles": "disabled",
+    "cortex-debug.variableUseNaturalFormat": true
 }
